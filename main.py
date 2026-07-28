@@ -9,15 +9,14 @@ from datetime import datetime, timezone
 app = Flask(__name__)
 CORS(app)
 
-#---ADD THIS NEW ROUTE---
 @app.route('/')
 def serve_dashboard():
- return render_template('index.html')
-#-------------------------------    
+    return render_template('index.html')
+
 # Global Caches to throttle external API calls
 macro_cache = {
-    "dxy": 0.00, 
-    "us10y": 0.00, 
+    "dxy": 0.00,
+    "us10y": 0.00,
     "us2y": 0.00,
     "vix": 0.00,
     "yield_curve": 0.00,
@@ -39,42 +38,42 @@ def get_score(value, min_val, max_val, inverse=False):
 def get_macro_data():
     global macro_cache
     current_time = time.time()
-    
+   
     # Throttle requests to every 60 seconds
     if current_time - macro_cache["last_updated"] > 60:
         try:
             dxy = yf.Ticker("DX-Y.NYB").history(period="1d")
             us10y = yf.Ticker("^TNX").history(period="1d")
             vix = yf.Ticker("^VIX").history(period="1d")
-            
+           
             us2y = yf.Ticker("US2Y=X").history(period="1d")
             if us2y.empty:
                 us2y = yf.Ticker("^FVX").history(period="1d")
 
-            if not dxy.empty: 
+            if not dxy.empty:
                 macro_cache["dxy"] = round(float(dxy['Close'].iloc[-1]), 2)
-            if not us10y.empty: 
+            if not us10y.empty:
                 macro_cache["us10y"] = round(float(us10y['Close'].iloc[-1]), 3)
-            if not vix.empty: 
+            if not vix.empty:
                 macro_cache["vix"] = round(float(vix['Close'].iloc[-1]), 2)
-            if not us2y.empty: 
+            if not us2y.empty:
                 macro_cache["us2y"] = round(float(us2y['Close'].iloc[-1]), 3)
-            
+           
             if not us10y.empty and not us2y.empty:
                 macro_cache["yield_curve"] = round(macro_cache["us10y"] - macro_cache["us2y"], 3)
-                
+               
             macro_cache["last_updated"] = current_time
         except Exception as e:
             print(f"Macro Data Fetch Error: {e}")
             pass
-            
+           
     return macro_cache
 
 
 def get_news_data():
     global news_cache
     current_time = time.time()
-    
+   
     # Throttle news requests to every 5 minutes
     if current_time - news_cache.get("last_updated", 0) > 300:
         try:
@@ -82,22 +81,22 @@ def get_news_data():
             url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
             response = requests.get(url, headers=headers, timeout=10)
             data = response.json()
-            
+           
             articles = []
             now = datetime.now(timezone.utc)
-            
+           
             for event in data:
                 if event.get("country") == "USD" and event.get("impact") in ["High", "Medium"]:
                     event_date_str = event.get("date", "")
                     try:
                         event_time = datetime.fromisoformat(event_date_str)
                         time_diff = (event_time - now).total_seconds()
-                        
+                       
                         if -7200 <= time_diff <= 86400:
                             impact_level = "HIGH" if event.get("impact") == "High" else "MED"
                             imminent = True if (0 <= time_diff <= 7200 and impact_level == "HIGH") else False
                             display_time = event_time.strftime("%I:%M %p")
-                            
+                           
                             articles.append({
                                 "title": f"[{display_time}] {event.get('title')}",
                                 "source": "FOREX FACTORY",
@@ -106,28 +105,37 @@ def get_news_data():
                             })
                     except Exception:
                         pass
-            
+           
             news_cache["articles"] = articles[:4]
             news_cache["last_updated"] = current_time
         except Exception:
             pass
-            
+           
     return news_cache.get("articles", [])
 
 
 def calculate_flow_yf(hist_df):
-    """Calculates bull/bear volume flow directly from market history."""
+    """
+    Calculates bull/bear volume flow averaged across multiple candles
+    to eliminate micro-noise and 10-second whipsaws.
+    """
     if hist_df is None or hist_df.empty or len(hist_df) == 0:
         return {"bull": 50.0, "bear": 50.0}
-    
-    latest = hist_df.iloc[-1]
-    total_range = latest['High'] - latest['Low']
-    if total_range == 0:
-        bull = 50.0
-    else:
-        bull = max(0.0, min(100.0, ((latest['Close'] - latest['Low']) / total_range) * 100.0))
+   
+    bull_scores = []
+    for idx, row in hist_df.iterrows():
+        total_range = row['High'] - row['Low']
+        if total_range > 0:
+            b = ((row['Close'] - row['Low']) / total_range) * 100.0
+            bull_scores.append(b)
+        else:
+            bull_scores.append(50.0)
+            
+    if not bull_scores:
+        return {"bull": 50.0, "bear": 50.0}
         
-    return {"bull": round(bull, 1), "bear": round(100.0 - bull, 1)}
+    avg_bull = max(0.0, min(100.0, sum(bull_scores) / len(bull_scores)))
+    return {"bull": round(avg_bull, 1), "bear": round(100.0 - avg_bull, 1)}
 
 
 def get_killzone():
@@ -191,14 +199,14 @@ def get_killzone():
             "desc": "Off-market hours — Spread expansion risk",
             "color": "text-slate-600"
         }
-           
-           
+
+
 def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news, total_score, killzone):
     """
-    Synthesizes volume anomalies, volatility compression, macro edge, 
+    Synthesizes volume anomalies, volatility compression, macro edge,
     and killzone timing to determine actionable market posture.
     """
-    
+   
     # 1. HARD SAFETY RULE: IMMINENT HIGH-IMPACT NEWS LOCKOUT
     if any(n.get('is_imminent', False) for n in news):
         return {
@@ -304,7 +312,7 @@ def get_gold_price():
         rates_d1 = ticker.history(period="1mo", interval="1d")
         rates_h1 = ticker.history(period="5d", interval="1h")
         rates_m15 = ticker.history(period="2d", interval="15m")
-        
+       
         # Fallback to Gold Futures if Forex Spot feed is momentarily empty
         if rates_d1.empty or rates_h1.empty:
             ticker = yf.Ticker("GC=F")
@@ -317,7 +325,7 @@ def get_gold_price():
 
         # Intraday Technical Calculations
         d1_range = float(today_d1['High'] - today_d1['Low'])
-        
+       
         # ADR 14 Calculation
         adr_14 = float((rates_d1['High'] - rates_d1['Low']).tail(14).mean())
         volatility_score = 50 if adr_14 == 0 else max(0, min(100, (d1_range / adr_14) * 50))
@@ -339,10 +347,10 @@ def get_gold_price():
         else:
             rel_volume = 1.0
 
-        # Multi-Timeframe Flow Calculations
-        h4_data = calculate_flow_yf(rates_h1.tail(4))
-        h1_data = calculate_flow_yf(rates_h1)
-        m15_data = calculate_flow_yf(rates_m15)
+        # Multi-Timeframe Flow Calculations (SMOOTHED OVER MULTIPLE CANDLES)
+        h4_data = calculate_flow_yf(rates_h1.tail(16))      # Last 16 hours
+        h1_data = calculate_flow_yf(rates_h1.tail(4))       # Last 4 hours
+        m15_data = calculate_flow_yf(rates_m15.tail(4))     # Last 1 hour (4x15m candles)
 
         fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
         fast_bear = round(100.0 - fast_bull, 1)
@@ -370,12 +378,12 @@ def get_gold_price():
 
         # Action Posture Synthesis
         posture = generate_action_posture(
-            fast_flow_data, 
-            volatility_score, 
-            rel_volume, 
-            macro, 
-            news, 
-            total_score, 
+            fast_flow_data,
+            volatility_score,
+            rel_volume,
+            macro,
+            news,
+            total_score,
             session
         )
 
@@ -416,4 +424,5 @@ if __name__ == '__main__':
     print("🚀 KFX Gold Intelligence Command Backend Online!")
     print("📡 8-Factor Synthesis Engine & Institutional Killzone Active.")
     app.run(host='0.0.0.0', port=10000)
+
 
