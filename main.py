@@ -368,7 +368,16 @@ def get_gold_price():
         score_dxy = get_score(macro['dxy'], 98.0, 110.0, inverse=True)
         score_4h = h4_data['bull']
         score_fast = fast_bull
-        score_range = get_score(price_range_1h, 5.0, 30.0, inverse=False)
+        
+        # --- DIRECTION-AWARE VOLATILITY RANGE FIX ---
+        raw_range_score = get_score(price_range_1h, 5.0, 30.0, inverse=False)
+        if fast_bull < 50.0:
+            # Bearish trend: High range/volatility pulls the score DOWN
+            score_range = 100.0 - raw_range_score
+        else:
+            # Bullish trend: High range/volatility pushes the score UP
+            score_range = raw_range_score
+
         score_macro_edge = (score_yield + score_curve + score_vix + score_dxy) / 4.0
 
         # Calculate Central Regime Score (0-100)
@@ -425,4 +434,4 @@ if __name__ == '__main__':
     print("📡 8-Factor Synthesis Engine & Institutional Killzone Active.")
     app.run(host='0.0.0.0', port=10000)
 
-
+                    
