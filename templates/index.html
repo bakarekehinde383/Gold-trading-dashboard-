@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KFX Gold Intelligence Tool</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #030712;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .glow-green { box-shadow: 0 0 10px rgba(16, 185, 129, 0.4); }
+        .glow-red { box-shadow: 0 0 10px rgba(239, 68, 68, 0.4); }
+        .glow-gold { box-shadow: 0 0 12px rgba(234, 179, 8, 0.3); }
+    </style>
+</head>
+<body class="text-slate-400 font-mono p-4 min-h-screen text-xs selection:bg-red-900 selection:text-white">
+
+    <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
+    <header class="border border-slate-800 bg-slate-950/80 backdrop-blur-md rounded-md p-3 mb-4 flex justify-between items-center">
+        <div class="flex items-center gap-3">
+            <span class="bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 font-bold px-2 py-0.5 rounded text-[10px]">K</span>
+            <span class="text-white font-bold tracking-[0.2em] text-xs uppercase">KFX GOLD <span class="text-slate-600">INTELLIGENCE TOOL</span></span>
+        </div>
+        <div class="flex items-center gap-6 text-[11px]">
+            <div>XAU / USD <span id="gold-price" class="text-white font-bold ml-1">$0.00</span></div>
+            <div class="hidden sm:block text-slate-500">SCORE <span id="top-score" class="text-white font-bold">50</span></div>
+            <div class="flex items-center gap-2">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span class="text-slate-400">LIVE</span>
+                <span id="gmt-clock" class="text-white font-bold ml-2 tracking-widest">00:00:00 GMT</span>
+            </div>
+        </div>
+    </header>
+
+    <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4 mb-4">
+        <h1 id="narrative-title" class="text-white text-base md:text-lg font-bold tracking-tight mb-1 transition-colors">
+            Neutral — wait for session confirmation.
+        </h1>
+        <p id="narrative-desc" class="text-slate-400 text-xs leading-relaxed max-w-5xl mb-3">
+            Opposing pressure dominates intraday flow. Macro remains constructive, but timing is not confirmed. NEUTRAL ZONE.
+        </p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
+        
+        <div class="space-y-4">
+            <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4">
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-slate-400 font-bold text-[10px] tracking-widest uppercase">• REGIME SCORE</span>
+                </div>
+                <div class="flex items-baseline gap-2 mb-1">
+                    <span id="regime-score-val" class="text-white font-bold text-4xl tracking-tight">50</span>
+                    <span class="text-slate-500 text-sm">/100</span>
+                </div>
+                <div id="regime-score-label" class="text-yellow-500 font-bold text-xs uppercase mb-4">NEUTRAL</div>
+
+                <div class="space-y-2 text-[10px]">
+                    <div class="flex justify-between">
+                        <span class="text-slate-400">SUPPORTING GOLD</span>
+                        <span id="support-pct" class="text-emerald-400 font-bold">50.0%</span>
+                    </div>
+                    <div class="w-full bg-slate-950 h-1.5 rounded-full overflow-hidden flex">
+                        <div id="support-bar" class="bg-emerald-500 h-full transition-all duration-500" style="width: 50%"></div>
+                        <div id="oppose-bar" class="bg-red-500 h-full transition-all duration-500" style="width: 50%"></div>
+                    </div>
+                    <div class="flex justify-between pt-1">
+                        <span class="text-slate-400">OPPOSING GOLD</span>
+                        <span id="oppose-pct" class="text-red-400 font-bold">50.0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4">
+                <div class="flex justify-between items-center border-b border-slate-800/80 pb-2 mb-3">
+                    <span class="text-blue-400 font-bold text-[10px] tracking-widest uppercase">• MACRO DOMINANCE</span>
+                </div>
+                
+                <div class="mb-4">
+                    <div class="flex justify-between text-[10px] mb-1">
+                        <span id="macro-bias-label" class="text-slate-400 uppercase font-bold">NEUTRAL EDGE</span>
+                        <span id="macro-edge-val" class="text-white font-bold">0.0 EDGE</span>
+                    </div>
+                    <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex mb-2">
+                        <div id="macro-bull-bar" class="bg-emerald-500 h-full" style="width: 50%"></div>
+                        <div id="macro-bear-bar" class="bg-red-500 h-full" style="width: 50%"></div>
+                    </div>
+                </div>
+
+                <div class="space-y-2 text-[10px]">
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-500">REAL YIELD (US10Y)</span>
+                        <span id="macro-us10y" class="text-white font-bold">0.00%</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-500">USD BROAD (DXY)</span>
+                        <span id="macro-dxy" class="text-white font-bold">0.00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 border border-slate-800 bg-slate-900/40 rounded-md p-4 flex flex-col justify-between relative">
+            <div class="flex justify-between items-center mb-2">
+                <span class="text-slate-400 font-bold text-[10px] tracking-widest uppercase">• GOLD PRESSURE RADAR — LIVE</span>
+            </div>
+
+            <div class="relative w-full flex justify-center items-center my-2 min-h-[260px]">
+                <div class="w-full max-w-[320px]">
+                    <canvas id="synthesisRadar"></canvas>
+                </div>
+                <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span id="center-radar-score" class="text-white font-bold text-2xl tracking-tighter drop-shadow-md">50</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-4 gap-2 border-t border-slate-800/80 pt-3 text-center">
+                <div class="border-r border-slate-800/80 pr-2">
+                    <span class="text-[9px] text-slate-500 uppercase block">SUPPORT</span>
+                    <span id="radar-support" class="text-emerald-400 font-bold text-xs">50.0%</span>
+                </div>
+                <div class="border-r border-slate-800/80 pr-2">
+                    <span class="text-[9px] text-slate-500 uppercase block">OPPOSE</span>
+                    <span id="radar-oppose" class="text-red-400 font-bold text-xs">50.0%</span>
+                </div>
+                <div class="border-r border-slate-800/80 pr-2">
+                    <span class="text-[9px] text-slate-500 uppercase block">NET EDGE</span>
+                    <span id="radar-net-edge" class="text-white font-bold text-xs">0.0</span>
+                </div>
+                <div>
+                    <span class="text-[9px] text-slate-500 uppercase block">CONVICTION</span>
+                    <span id="radar-conviction" class="text-yellow-500 font-bold text-xs">LOW · SPLIT</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4">
+                <span class="text-slate-400 font-bold text-[10px] tracking-widest uppercase block mb-2">• ACTION POSTURE</span>
+                <h2 id="posture-headline" class="text-white font-bold text-base leading-tight mb-3">Stand aside.</h2>
+                <div class="mb-4">
+                    <div class="grid grid-cols-4 gap-1 text-center text-[8px] font-bold">
+                        <div id="ladder-observe" class="py-1 rounded bg-slate-800 text-slate-400 border border-slate-700">OBSERVE</div>
+                        <div id="ladder-prepare" class="py-1 rounded bg-slate-950 text-slate-600 border border-slate-800/50">PREPARE</div>
+                        <div id="ladder-act" class="py-1 rounded bg-slate-950 text-slate-600 border border-slate-800/50">ACT</div>
+                        <div id="ladder-manage" class="py-1 rounded bg-slate-950 text-slate-600 border border-slate-800/50">MANAGE</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4 space-y-2">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-yellow-500 font-bold text-[10px] tracking-widest uppercase">• KILLZONE TIMING</span>
+                    <span id="killzone-countdown" class="text-[9px] text-slate-400">Calculating...</span>
+                </div>
+                
+                <div class="flex justify-between items-center border border-slate-800/80 bg-slate-950/60 p-2 rounded">
+                    <div>
+                        <span class="text-white font-bold block text-xs" id="session-display-name">SESSION SEARCH</span>
+                        <span class="text-slate-500 text-[9px]" id="session-desc">Awaiting timing...</span>
+                    </div>
+                    <span id="session-vol-badge" class="text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase">
+                        VOL
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4 mb-4">
+        <span class="text-slate-400 font-bold text-[10px] tracking-widest uppercase block mb-4 border-b border-slate-800/80 pb-2">• INTRADAY TIMING · EXECUTION LAYER</span>
+        
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+                <div class="flex justify-between text-[10px] mb-1">
+                    <span class="text-slate-500 font-bold uppercase">Intraday Flow (4H)</span>
+                </div>
+                <div class="flex justify-between items-end mb-2">
+                    <span id="exec-4h-bull" class="text-emerald-400 font-bold text-lg">50.0%</span>
+                    <span id="exec-4h-label" class="text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">MIXED</span>
+                    <span id="exec-4h-bear" class="text-red-400 font-bold text-lg">50.0%</span>
+                </div>
+                <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
+                    <div id="exec-4h-bar" class="bg-emerald-500 h-full transition-all duration-500" style="width: 50%"></div>
+                    <div class="bg-red-500 h-full flex-1 transition-all duration-500"></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between text-[10px] mb-1">
+                    <span class="text-slate-500 font-bold uppercase">Intraday Flow (2H)</span>
+                </div>
+                <div class="flex justify-between items-end mb-2">
+                    <span id="exec-2h-bull" class="text-emerald-400 font-bold text-lg">50.0%</span>
+                    <span id="exec-2h-label" class="text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">MIXED</span>
+                    <span id="exec-2h-bear" class="text-red-400 font-bold text-lg">50.0%</span>
+                </div>
+                <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
+                    <div id="exec-2h-bar" class="bg-emerald-500 h-full transition-all duration-500" style="width: 50%"></div>
+                    <div class="bg-red-500 h-full flex-1 transition-all duration-500"></div>
+                </div>
+            </div>
+
+            <div>
+                <div class="flex justify-between text-[10px] mb-1">
+                    <span class="text-slate-500 font-bold uppercase">Fast Tape (15M/1M)</span>
+                </div>
+                <div class="flex justify-between items-end mb-2">
+                    <span id="exec-15m-bull" class="text-emerald-400 font-bold text-lg">50.0%</span>
+                    <span id="exec-15m-label" class="text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">MIXED</span>
+                    <span id="exec-15m-bear" class="text-red-400 font-bold text-lg">50.0%</span>
+                </div>
+                <div class="w-full bg-slate-950 h-2 rounded-full overflow-hidden flex">
+                    <div id="exec-15m-bar" class="bg-emerald-500 h-full transition-all duration-500" style="width: 50%"></div>
+                    <div class="bg-red-500 h-full flex-1 transition-all duration-500"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        
+        <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4">
+            <div class="flex justify-between items-center border-b border-slate-800/80 pb-2 mb-3">
+                <span class="text-orange-500 font-bold text-[10px] tracking-widest uppercase">• INTELLIGENCE FEED · ECONOMIC CALENDAR</span>
+                <span id="news-count" class="text-slate-500 text-[10px] uppercase">0 ITEMS</span>
+            </div>
+            <div id="news-container" class="space-y-2">
+                <p class="text-xs text-slate-500 animate-pulse">Initializing calendar feed scan...</p>
+            </div>
+        </div>
+
+        <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4">
+            <div class="flex justify-between items-center border-b border-slate-800/80 pb-2 mb-3">
+                <span class="text-red-400 font-bold text-[10px] tracking-widest uppercase">• INVALIDATION CONDITIONS</span>
+                <span class="text-slate-600 text-[9px] uppercase">WHAT BREAKS THE NARRATIVE</span>
+            </div>
+            <div class="space-y-3">
+                <div class="flex items-start justify-between bg-slate-950/40 border border-slate-800/60 p-2 rounded">
+                    <div class="flex items-start gap-2">
+                        <span class="text-slate-600 font-bold text-xs">01</span>
+                        <div>
+                            <p class="text-slate-200 font-bold text-xs">Real yields rise above 2.00%</p>
+                            <p class="text-slate-500 text-[10px] mt-0.5">Higher real yields increase carry pressure.</p>
+                        </div>
+                    </div>
+                    <span id="invalidation-yield-status" class="text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase">FAR</span>
+                </div>
+                <div class="flex items-start justify-between bg-slate-950/40 border border-slate-800/60 p-2 rounded">
+                    <div class="flex items-start gap-2">
+                        <span class="text-slate-600 font-bold text-xs">02</span>
+                        <div>
+                            <p class="text-slate-200 font-bold text-xs">USD pushes above 108.50</p>
+                            <p class="text-slate-500 text-[10px] mt-0.5">Dollar index suppresses valuation.</p>
+                        </div>
+                    </div>
+                    <span id="invalidation-dxy-status" class="text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase">FAR</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // LIVE GMT CLOCK
+        function updateClock() {
+            const now = new Date();
+            const hours = String(now.getUTCHours()).padStart(2, '0');
+            const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+            const seconds = String(now.getUTCSeconds()).padStart(2, '0');
+            document.getElementById('gmt-clock').innerText = `${hours}:${minutes}:${seconds} GMT`;
+
+            // Session Countdown Logic (Approximated based on GMT)
+            const h = now.getUTCHours();
+            let countdown = "";
+            if (h >= 13 && h < 21) {
+                const remHours = 20 - h;
+                const remMins = 59 - now.getUTCMinutes();
+                countdown = `NY CLOSES IN ${remHours}H ${remMins}M`;
+            } else if (h >= 8 && h < 16) {
+                const remHours = 15 - h;
+                const remMins = 59 - now.getUTCMinutes();
+                countdown = `LONDON CLOSES IN ${remHours}H ${remMins}M`;
+            } else {
+                countdown = `AWAITING NEXT OPEN`;
+            }
+            document.getElementById('killzone-countdown').innerText = countdown;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // CHART INIT
+        const ctx = document.getElementById('synthesisRadar').getContext('2d');
+        const synthesisChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['REAL YLD', '10Y/2Y', 'VIX', 'DXY', 'INTRA 4H', 'FAST TAPE', '1H RANGE', 'MACRO EDGE'],
+                datasets: [{
+                    data: [50, 50, 50, 50, 50, 50, 50, 50],
+                    backgroundColor: 'rgba(234, 179, 8, 0.12)', 
+                    borderColor: 'rgba(234, 179, 8, 0.8)',
+                    pointBackgroundColor: '#ffffff',
+                    borderWidth: 1.5,
+                    pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        angleLines: { color: 'rgba(255, 255, 255, 0.08)' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        pointLabels: { color: '#94a3b8', font: { family: 'monospace', size: 8 } },
+                        ticks: { display: false, min: 0, max: 100 }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        function updateExecutionLayer(h4Bull, fastBull) {
+            // Interpolate 2H based on 4H and Fast
+            const h2Bull = (h4Bull + fastBull) / 2;
+            
+            const frames = [
+                { bull: h4Bull, prefix: 'exec-4h' },
+                { bull: h2Bull, prefix: 'exec-2h' },
+                { bull: fastBull, prefix: 'exec-15m' }
+            ];
+
+            frames.forEach(frame => {
+                const bear = 100 - frame.bull;
+                document.getElementById(`${frame.prefix}-bull`).innerText = `${frame.bull.toFixed(1)}%`;
+                document.getElementById(`${frame.prefix}-bear`).innerText = `${bear.toFixed(1)}%`;
+                document.getElementById(`${frame.prefix}-bar`).style.width = `${frame.bull}%`;
+
+                const labelEl = document.getElementById(`${frame.prefix}-label`);
+                if (frame.bull >= 55) {
+                    labelEl.innerText = "TIMING - BULLISH";
+                    labelEl.className = "text-[9px] border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded uppercase font-bold";
+                } else if (frame.bull <= 45) {
+                    labelEl.innerText = "TIMING - BEARISH";
+                    labelEl.className = "text-[9px] border border-red-500/40 text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded uppercase font-bold";
+                } else {
+                    labelEl.innerText = "MIXED";
+                    labelEl.className = "text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold";
+                }
+            });
+        }
+
+        // MAIN FETCH
+        function fetchGoldData() {
+            fetch('/api/gold')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.bid > 0) {
+                        document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
+                        
+                        // MACRO NUMBERS & BARS
+                        if (data.macro) {
+                            document.getElementById('macro-us10y').innerText = `${data.macro.us10y.toFixed(3)}%`;
+                            document.getElementById('macro-dxy').innerText = data.macro.dxy.toFixed(2);
+                            
+                            // Simulate a macro "Edge" score from DXY and Yield
+                            const macroEdge = (50 - ((data.macro.us10y - 1.5) * 20) - ((data.macro.dxy - 100) * 2));
+                            const clampedEdge = Math.max(-50, Math.min(50, macroEdge));
+                            
+                            document.getElementById('macro-edge-val').innerText = `${clampedEdge > 0 ? '+' : ''}${clampedEdge.toFixed(1)} EDGE`;
+                            
+                            const biasLabel = document.getElementById('macro-bias-label');
+                            if (clampedEdge > 10) {
+                                biasLabel.innerText = "LEANING BULLISH";
+                                biasLabel.className = "text-emerald-400 uppercase font-bold text-[10px]";
+                            } else if (clampedEdge < -10) {
+                                biasLabel.innerText = "LEANING BEARISH";
+                                biasLabel.className = "text-red-400 uppercase font-bold text-[10px]";
+                            } else {
+                                biasLabel.innerText = "NEUTRAL EDGE";
+                                biasLabel.className = "text-slate-400 uppercase font-bold text-[10px]";
+                            }
+
+                            const normalizedBull = 50 + clampedEdge;
+                            document.getElementById('macro-bull-bar').style.width = `${normalizedBull}%`;
+                            document.getElementById('macro-bear-bar').style.width = `${100 - normalizedBull}%`;
+
+                            // INVALIDATION STATUS UPDATES
+                            const yieldInv = document.getElementById('invalidation-yield-status');
+                            if (data.macro.us10y >= 2.00) {
+                                yieldInv.innerText = "TRIGGERED";
+                                yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                            } else if (data.macro.us10y >= 1.80) {
+                                yieldInv.innerText = "NEAR";
+                                yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                            } else {
+                                yieldInv.innerText = "FAR";
+                                yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
+                            }
+
+                            const dxyInv = document.getElementById('invalidation-dxy-status');
+                            if (data.macro.dxy >= 108.50) {
+                                dxyInv.innerText = "TRIGGERED";
+                                dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                            } else if (data.macro.dxy >= 106.00) {
+                                dxyInv.innerText = "NEAR";
+                                dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                            } else {
+                                dxyInv.innerText = "FAR";
+                                dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
+                            }
+                        }
+
+                        // EXECUTION LAYER
+                        if (data.multi_flow) {
+                            updateExecutionLayer(data.multi_flow.h4.bull, data.multi_flow.fast.bull);
+                        } else {
+                            updateExecutionLayer(data.bull_flow || 50, data.bull_flow || 50);
+                        }
+
+                        // SCORE & FLOW
+                        const supportVal = data.bull_flow;
+                        const opposeVal = data.bear_flow;
+                        document.getElementById('support-pct').innerText = `${supportVal.toFixed(1)}%`;
+                        document.getElementById('oppose-pct').innerText = `${opposeVal.toFixed(1)}%`;
+                        document.getElementById('support-bar').style.width = `${supportVal}%`;
+                        document.getElementById('oppose-bar').style.width = `${opposeVal}%`;
+
+                        document.getElementById('radar-support').innerText = `${supportVal.toFixed(1)}%`;
+                        document.getElementById('radar-oppose').innerText = `${opposeVal.toFixed(1)}%`;
+                        
+                        const netEdgeVal = (supportVal - opposeVal).toFixed(1);
+                        const netEdgeEl = document.getElementById('radar-net-edge');
+                        netEdgeEl.innerText = (netEdgeVal > 0 ? `+${netEdgeVal}` : netEdgeVal);
+                        netEdgeEl.className = netEdgeVal >= 0 ? "text-emerald-400 font-bold text-xs" : "text-red-400 font-bold text-xs";
+
+                        if (data.posture) {
+                            const score = data.posture.score;
+                            document.getElementById('top-score').innerText = score;
+                            document.getElementById('regime-score-val').innerText = score;
+                            document.getElementById('center-radar-score').innerText = score;
+
+                            const bias = data.posture.bias;
+                            document.getElementById('regime-score-label').innerText = bias;
+
+                            document.getElementById('narrative-title').innerText = data.posture.action;
+                            document.getElementById('narrative-desc').innerText = data.posture.narrative;
+                            document.getElementById('posture-headline').innerText = data.posture.action;
+                            
+                            if (data.posture.color) {
+                                document.getElementById('narrative-title').className = `text-base md:text-lg font-bold tracking-tight mb-1 transition-colors ${data.posture.color}`;
+                            }
+
+                            const ls = data.posture.ladder_state || "OBSERVE";
+                            ['observe', 'prepare', 'act', 'manage'].forEach(l => {
+                                document.getElementById(`ladder-${l}`).className = "py-1 rounded bg-slate-950 text-slate-600 border border-slate-800/50";
+                            });
+                            if (ls === "PREPARE") document.getElementById('ladder-prepare').className = "py-1 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40 font-bold glow-gold";
+                            else if (ls === "ACT") document.getElementById('ladder-act').className = "py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold glow-green";
+                            else if (ls === "MANAGE") document.getElementById('ladder-manage').className = "py-1 rounded bg-red-500/20 text-red-400 border border-red-500/40 font-bold glow-red";
+                            else document.getElementById('ladder-observe').className = "py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold";
+                        }
+
+                        if (data.session) {
+                            document.getElementById('session-display-name').innerText = data.session.name;
+                            document.getElementById('session-desc').innerText = data.session.desc || "Tracking flow...";
+                            document.getElementById('session-vol-badge').innerText = `${data.session.vol} VOL`;
+                        }
+
+                        if (data.radar_data && data.radar_data.length === 8) {
+                            synthesisChart.data.datasets[0].data = data.radar_data;
+                            synthesisChart.update();
+                        }
+
+                        // RESTORED: INTELLIGENCE NEWS FEED DATA BINDING
+                        if (data.news && data.news.length > 0) {
+                            document.getElementById('news-count').innerText = `${data.news.length} ITEMS`;
+                            const newsHtml = data.news.map(article => `
+                                <div class="flex items-center justify-between hover:bg-slate-800/40 p-1.5 rounded transition-colors border border-transparent hover:border-slate-800">
+                                    <div class="flex-1 pr-3 truncate">
+                                        <p class="text-xs text-slate-300 truncate">${article.title}</p>
+                                        <p class="text-[9px] text-slate-600 uppercase mt-0.5">${article.source}</p>
+                                    </div>
+                                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded border ${article.impact === 'HIGH' ? 'border-red-500/30 text-red-400 bg-red-500/10' : 'border-slate-700 text-slate-400 bg-slate-900'} uppercase">
+                                        ${article.impact}
+                                    </span>
+                                </div>
+                            `).join('');
+                            document.getElementById('news-container').innerHTML = newsHtml;
+                        }
+                    }
+                })
+                .catch(err => console.error("API Fetch Error:", err));
+        }
+
+        fetchGoldData();
+        setInterval(fetchGoldData, 2000);
+    </script>
+</body>
+</html>
+
