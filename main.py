@@ -146,6 +146,15 @@ def get_killzone():
             "desc": "Judas swing / Initial liquidity sweep active",
             "color": "text-yellow-500"
         }
+    # 10:00 - 12:00 UTC: London Late / Pre-NY (BRIDGING THE GAP)
+    elif 10.0 <= time_decimal < 12.0:
+        return {
+            "name": "LONDON LATE / PRE-NY",
+            "vol": "MEDIUM",
+            "phase": "TRANSITION",
+            "desc": "London mid-day lull before NY Session opens",
+            "color": "text-blue-400"
+        }
     # 12:00 - 16:00 UTC: NY / London Overlap (Gold Peak Volatility)
     elif 12.0 <= time_decimal < 16.0:
         return {
@@ -182,8 +191,8 @@ def get_killzone():
             "desc": "Off-market hours — Spread expansion risk",
             "color": "text-slate-600"
         }
-
-
+           
+           
 def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news, total_score, killzone):
     """
     Synthesizes volume anomalies, volatility compression, macro edge, 
