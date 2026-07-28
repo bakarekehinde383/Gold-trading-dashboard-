@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from flask_cors import CORS
 import yfinance as yf
 import requests
@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 app = Flask(__name__)
 CORS(app)
 
+#---ADD THIS NEW ROUTE---
+@app.route('/')
+def serve_dashboard():
+ return render_template('index.html')
+#-------------------------------    
 # Global Caches to throttle external API calls
 macro_cache = {
     "dxy": 0.00, 
