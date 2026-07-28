@@ -1,6 +1,5 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
-import MetaTrader5 as mt5
 import yfinance as yf
 import requests
 import time
@@ -9,12 +8,6 @@ from datetime import datetime, timezone
 # Initialize Flask App
 app = Flask(__name__)
 CORS(app)
-
-# Initialize MetaTrader 5
-if not mt5.initialize():
-    print("Failed to initialize MT5.")
-    mt5.shutdown()
-    quit()
 
 # Global Caches to throttle external API calls
 macro_cache = {
@@ -117,14 +110,19 @@ def get_news_data():
     return news_cache.get("articles", [])
 
 
-def calculate_flow(symbol, timeframe):
-    rates = mt5.copy_rates_from_pos(symbol, timeframe, 0, 1)
-    tick = mt5.symbol_info_tick(symbol)
-    if rates is None or len(rates) == 0 or tick is None:
+def calculate_flow_yf(hist_df):
+    """Calculates bull/bear volume flow directly from market history."""
+    if hist_df is None or hist_df.empty or len(hist_df) == 0:
         return {"bull": 50.0, "bear": 50.0}
-    total_range = rates[0]['high'] - rates[0]['low']
-    bull = 50.0 if total_range == 0 else max(0, min(100, ((tick.bid - rates[0]['low']) / total_range) * 100))
-    return {"bull": round(bull, 1), "bear": round(100 - bull, 1)}
+    
+    latest = hist_df.iloc[-1]
+    total_range = latest['High'] - latest['Low']
+    if total_range == 0:
+        bull = 50.0
+    else:
+        bull = max(0.0, min(100.0, ((latest['Close'] - latest['Low']) / total_range) * 100.0))
+        
+    return {"bull": round(bull, 1), "bear": round(100.0 - bull, 1)}
 
 
 def get_killzone():
@@ -285,113 +283,123 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
 
 @app.route('/api/gold')
 def get_gold_price():
-    symbol = "XAUUSD"  # Change to "GOLD" if your broker uses that ticker name
-    tick = mt5.symbol_info_tick(symbol)
-    rates_d1 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 14)
-    rates_h1 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 14)
-    
-    if tick is None or rates_d1 is None or len(rates_d1) < 14:
-        return jsonify({"error": "MT5 Data not found", "bid": 0.00})
+    symbol = "XAUUSD"
+    try:
+        # Fetch live Gold data directly from Yahoo Finance
+        ticker = yf.Ticker("XAUUSD=X")
+        rates_d1 = ticker.history(period="1mo", interval="1d")
+        rates_h1 = ticker.history(period="5d", interval="1h")
+        rates_m15 = ticker.history(period="2d", interval="15m")
         
-    current_price = tick.bid
-    today_d1 = rates_d1[-1]
-    
-    # Intraday Technical Calculations
-    d1_range = today_d1['high'] - today_d1['low']
-    bull_d1 = 50.0 if d1_range == 0 else max(0, min(100, ((current_price - today_d1['low']) / d1_range) * 100))
-    bear_d1 = 100.0 - bull_d1
-    
-    adr_14 = sum([r['high'] - r['low'] for r in rates_d1]) / 14
-    volatility_score = 50 if adr_14 == 0 else max(0, min(100, (d1_range / adr_14) * 50))
-    volume_score = min(100, (today_d1['tick_volume'] / 50000) * 100)
-    
-    # 1H Range calculation for Radar Axis 7
-    if rates_h1 is not None and len(rates_h1) > 0:
-        recent_high = max(r['high'] for r in rates_h1)
-        recent_low = min(r['low'] for r in rates_h1)
-        price_range_1h = recent_high - recent_low
-    else:
-        price_range_1h = 10.0
+        # Fallback to Gold Futures if Forex Spot feed is momentarily empty
+        if rates_d1.empty or rates_h1.empty:
+            ticker = yf.Ticker("GC=F")
+            rates_d1 = ticker.history(period="1mo", interval="1d")
+            rates_h1 = ticker.history(period="5d", interval="1h")
+            rates_m15 = ticker.history(period="2d", interval="15m")
 
-    # Relative Tick Volume Calculation (Current H1 volume vs 14-period SMA)
-    if rates_h1 is not None and len(rates_h1) >= 14:
-        current_h1_vol = rates_h1[-1]['tick_volume']
-        avg_h1_vol = sum(r['tick_volume'] for r in rates_h1) / 14.0
-        rel_volume = (current_h1_vol / avg_h1_vol) if avg_h1_vol > 0 else 1.0
-    else:
-        rel_volume = 1.0
+        current_price = float(rates_h1['Close'].iloc[-1])
+        today_d1 = rates_d1.iloc[-1]
 
-    # Multi-Timeframe Flow Calculations
-    h4_data = calculate_flow(symbol, mt5.TIMEFRAME_H4)
-    h1_data = calculate_flow(symbol, mt5.TIMEFRAME_H1)
-    m15_data = calculate_flow(symbol, mt5.TIMEFRAME_M15)
-    
-    fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
-    fast_bear = round(100.0 - fast_bull, 1)
-    fast_flow_data = {"bull": fast_bull, "bear": fast_bear}
-    
-    # Fetch Cached Macro, News & Session Data
-    macro = get_macro_data()
-    news = get_news_data()
-    session = get_killzone()
+        # Intraday Technical Calculations
+        d1_range = float(today_d1['High'] - today_d1['Low'])
+        
+        # ADR 14 Calculation
+        adr_14 = float((rates_d1['High'] - rates_d1['Low']).tail(14).mean())
+        volatility_score = 50 if adr_14 == 0 else max(0, min(100, (d1_range / adr_14) * 50))
+        volume_score = min(100, (float(today_d1.get('Volume', 50000)) / 50000) * 100)
 
-    # --- 8-FACTOR SYNTHESIS SCORING ENGINE ---
-    score_yield = get_score(macro['us10y'], 3.0, 5.5, inverse=True)
-    score_curve = get_score(macro['yield_curve'], -1.0, 1.0, inverse=True)
-    score_vix = get_score(macro['vix'], 12.0, 35.0, inverse=False)
-    score_dxy = get_score(macro['dxy'], 98.0, 110.0, inverse=True)
-    score_4h = h4_data['bull']
-    score_fast = fast_bull
-    score_range = get_score(price_range_1h, 5.0, 30.0, inverse=False)
-    score_macro_edge = (score_yield + score_curve + score_vix + score_dxy) / 4.0
+        # 1H Range calculation for Radar Axis 7
+        if not rates_h1.empty:
+            recent_high = float(rates_h1['High'].tail(14).max())
+            recent_low = float(rates_h1['Low'].tail(14).min())
+            price_range_1h = recent_high - recent_low
+        else:
+            price_range_1h = 10.0
 
-    # Calculate Central Regime Score (0-100)
-    total_score = int(round(
-        (score_yield + score_curve + score_vix + score_dxy + score_4h + score_fast + score_range + score_macro_edge) / 8.0
-    ))
+        # Relative Tick Volume Calculation
+        if len(rates_h1) >= 14:
+            current_h1_vol = float(rates_h1['Volume'].iloc[-1])
+            avg_h1_vol = float(rates_h1['Volume'].tail(14).mean())
+            rel_volume = (current_h1_vol / avg_h1_vol) if avg_h1_vol > 0 else 1.0
+        else:
+            rel_volume = 1.0
 
-    # Action Posture Synthesis
-    posture = generate_action_posture(
-        fast_flow_data, 
-        volatility_score, 
-        rel_volume, 
-        macro, 
-        news, 
-        total_score, 
-        session
-    )
+        # Multi-Timeframe Flow Calculations
+        h4_data = calculate_flow_yf(rates_h1.tail(4))
+        h1_data = calculate_flow_yf(rates_h1)
+        m15_data = calculate_flow_yf(rates_m15)
 
-    # 8-Factor Array aligned with Frontend Radar Axes
-    synthesis_8_factors = [
-        round(score_yield, 1),
-        round(score_curve, 1),
-        round(score_vix, 1),
-        round(score_dxy, 1),
-        round(score_4h, 1),
-        round(score_fast, 1),
-        round(score_range, 1),
-        round(score_macro_edge, 1)
-    ]
+        fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
+        fast_bear = round(100.0 - fast_bull, 1)
+        fast_flow_data = {"bull": fast_bull, "bear": fast_bear}
 
-    return jsonify({
-        "symbol": symbol,
-        "bid": current_price,
-        "bull_flow": round(score_macro_edge, 1),
-        "bear_flow": round(100.0 - score_macro_edge, 1),
-        "radar_data": synthesis_8_factors,
-        "multi_flow": {
-            "h4": h4_data,
-            "h2": calculate_flow(symbol, mt5.TIMEFRAME_H2),
-            "fast": fast_flow_data
-        },
-        "macro": macro,
-        "news": news,
-        "posture": posture,
-        "session": session
-    })
+        # Fetch Cached Macro, News & Session Data
+        macro = get_macro_data()
+        news = get_news_data()
+        session = get_killzone()
+
+        # --- 8-FACTOR SYNTHESIS SCORING ENGINE ---
+        score_yield = get_score(macro['us10y'], 3.0, 5.5, inverse=True)
+        score_curve = get_score(macro['yield_curve'], -1.0, 1.0, inverse=True)
+        score_vix = get_score(macro['vix'], 12.0, 35.0, inverse=False)
+        score_dxy = get_score(macro['dxy'], 98.0, 110.0, inverse=True)
+        score_4h = h4_data['bull']
+        score_fast = fast_bull
+        score_range = get_score(price_range_1h, 5.0, 30.0, inverse=False)
+        score_macro_edge = (score_yield + score_curve + score_vix + score_dxy) / 4.0
+
+        # Calculate Central Regime Score (0-100)
+        total_score = int(round(
+            (score_yield + score_curve + score_vix + score_dxy + score_4h + score_fast + score_range + score_macro_edge) / 8.0
+        ))
+
+        # Action Posture Synthesis
+        posture = generate_action_posture(
+            fast_flow_data, 
+            volatility_score, 
+            rel_volume, 
+            macro, 
+            news, 
+            total_score, 
+            session
+        )
+
+        # 8-Factor Array aligned with Frontend Radar Axes
+        synthesis_8_factors = [
+            round(score_yield, 1),
+            round(score_curve, 1),
+            round(score_vix, 1),
+            round(score_dxy, 1),
+            round(score_4h, 1),
+            round(score_fast, 1),
+            round(score_range, 1),
+            round(score_macro_edge, 1)
+        ]
+
+        return jsonify({
+            "symbol": symbol,
+            "bid": round(current_price, 2),
+            "bull_flow": round(score_macro_edge, 1),
+            "bear_flow": round(100.0 - score_macro_edge, 1),
+            "radar_data": synthesis_8_factors,
+            "multi_flow": {
+                "h4": h4_data,
+                "h2": calculate_flow_yf(rates_h1.tail(2)),
+                "fast": fast_flow_data
+            },
+            "macro": macro,
+            "news": news,
+            "posture": posture,
+            "session": session
+        })
+    except Exception as e:
+        print(f"Error in /api/gold: {e}")
+        return jsonify({"error": str(e), "bid": 0.00}), 500
 
 
 if __name__ == '__main__':
     print("🚀 KFX Gold Intelligence Command Backend Online!")
     print("📡 8-Factor Synthesis Engine & Institutional Killzone Active.")
-    app.run(port=5000, debug=True)
+    app.run(host='0.0.0.0', port=10000)
+
