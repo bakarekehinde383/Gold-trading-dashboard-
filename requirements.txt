@@ -1,5 +1,5 @@
 flask
 flask-cors
-yfinance
+yfinance>=1.5.2
 requests
 gunicorn
