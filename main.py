@@ -320,27 +320,42 @@ def get_gold_price():
     global gold_cache
     current_time = time.time()
     
-    # 1. SERVE CACHED DATA IF FRESH (Less than 60 seconds old)
+    # 1. SERVE CACHED DATA IF FRESH
     if gold_cache["data"] is not None and (current_time - gold_cache["last_updated"] < CACHE_TIMEOUT):
         return jsonify(gold_cache["data"])
 
     symbol = "XAUUSD"
     try:
-        # Fetch live Gold data directly from Yahoo Finance
-        ticker = yf.Ticker("XAUUSD=X")
+        # --- THE FIX: ADD A CUSTOM BROWSER SESSION ---
+        import requests
+        session = requests.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        })
+        
+        # 2. Fetch live Gold Futures FIRST (Yahoo blocks futures less often)
+        ticker = yf.Ticker("GC=F", session=session)
         rates_d1 = ticker.history(period="1mo", interval="1d")
         rates_h1 = ticker.history(period="5d", interval="1h")
         rates_m15 = ticker.history(period="2d", interval="15m")
        
-        # Fallback to Gold Futures if Forex Spot feed is momentarily empty
+        # 3. Fallback to Forex Spot if Futures are blocked
         if rates_d1.empty or rates_h1.empty:
-            ticker = yf.Ticker("GC=F")
+            ticker = yf.Ticker("XAUUSD=X", session=session)
             rates_d1 = ticker.history(period="1mo", interval="1d")
             rates_h1 = ticker.history(period="5d", interval="1h")
             rates_m15 = ticker.history(period="2d", interval="15m")
 
+        # 4. CRASH PREVENTION: If Yahoo completely blocked both, safely trigger the exception
+        if rates_d1.empty or rates_h1.empty:
+            raise ValueError("Yahoo Finance is blocking the server IP.")
+
         current_price = float(rates_h1['Close'].iloc[-1])
         today_d1 = rates_d1.iloc[-1]
+        
+        # ... [KEEP ALL YOUR INTRADAY TECHNICAL CALCULATIONS BELOW THIS EXACTLY THE SAME] ...
+
+
 
         # Intraday Technical Calculations
         d1_range = float(today_d1['High'] - today_d1['Low'])
