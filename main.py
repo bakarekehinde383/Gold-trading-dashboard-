@@ -35,7 +35,6 @@ def get_score(value, min_val, max_val, inverse=False):
     return max(0.0, min(100.0, score))
 
 
-
 def get_macro_data():
     global macro_cache
     current_time = time.time()
@@ -43,40 +42,42 @@ def get_macro_data():
     # Throttle requests to every 60 seconds
     if current_time - macro_cache["last_updated"] > 60:
         try:
-            # --- THE FIX: ADD A CUSTOM BROWSER SESSION ---
-            import requests
-            session = requests.Session()
-            session.headers.update({
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            })
+            import yfinance as yf
+            import pandas as pd
             
-            # --- APPLY SESSION TO ALL MACRO TICKERS TO BYPASS YAHOO BLOCK ---
-            dxy = yf.Ticker("DX-Y.NYB", session=session).history(period="1d")
-            us10y = yf.Ticker("^TNX", session=session).history(period="1d")
-            vix = yf.Ticker("^VIX", session=session).history(period="1d")
-
-            us2y = yf.Ticker("US2Y=X", session=session).history(period="1d")
-            if us2y.empty:
-                us2y = yf.Ticker("^FVX", session=session).history(period="1d")
-
-            # Update cache if data successfully retrieved
-            if not dxy.empty:
-                macro_cache["dxy"] = round(float(dxy['Close'].iloc[-1]), 2)
-            if not us10y.empty:
-                macro_cache["us10y"] = round(float(us10y['Close'].iloc[-1]), 3)
-            if not vix.empty:
-                macro_cache["vix"] = round(float(vix['Close'].iloc[-1]), 2)
-            if not us2y.empty:
-                macro_cache["us2y"] = round(float(us2y['Close'].iloc[-1]), 3)
-
-            # Calculate Yield Curve (10Y - 2Y)
-            if not us10y.empty and not us2y.empty:
-                macro_cache["yield_curve"] = round(macro_cache["us10y"] - macro_cache["us2y"], 3)
-
+            # THE FIX: Bulk download all macro tickers in a SINGLE request.
+            # Yahoo's bulk API allows this and won't flag your IP.
+            tickers_list = ["DX-Y.NYB", "^TNX", "^VIX", "^FVX"]
+            
+            # Fetch all at once quietly
+            data = yf.download(tickers_list, period="1d", progress=False)
+            
+            if not data.empty:
+                # Safely extract DXY (US Dollar Index)
+                if "DX-Y.NYB" in data['Close'] and not pd.isna(data['Close']["DX-Y.NYB"].iloc[-1]):
+                    macro_cache["dxy"] = round(float(data['Close']["DX-Y.NYB"].iloc[-1]), 2)
+                    
+                # Safely extract US10Y (10-Year Yield)
+                if "^TNX" in data['Close'] and not pd.isna(data['Close']["^TNX"].iloc[-1]):
+                    macro_cache["us10y"] = round(float(data['Close']["^TNX"].iloc[-1]), 3)
+                    
+                # Safely extract VIX (Volatility Index)
+                if "^VIX" in data['Close'] and not pd.isna(data['Close']["^VIX"].iloc[-1]):
+                    macro_cache["vix"] = round(float(data['Close']["^VIX"].iloc[-1]), 2)
+                    
+                # Safely extract US2Y (via the 5-year FVX proxy if 2Y is missing)
+                if "^FVX" in data['Close'] and not pd.isna(data['Close']["^FVX"].iloc[-1]):
+                    macro_cache["us2y"] = round(float(data['Close']["^FVX"].iloc[-1]), 3)
+                    
+                # Calculate the Yield Curve
+                if macro_cache["us10y"] != 0.00 and macro_cache["us2y"] != 0.00:
+                    macro_cache["yield_curve"] = round(macro_cache["us10y"] - macro_cache["us2y"], 3)
+            
             macro_cache["last_updated"] = current_time
             
         except Exception as e:
-            print(f"Macro Data Fetch Error: {e}")
+            # flush=True forces any hidden errors to immediately print to the Render logs!
+            print(f"Macro Data Fetch Error: {e}", flush=True) 
             pass
 
     return macro_cache
