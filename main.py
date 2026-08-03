@@ -303,8 +303,27 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
     }
 
 
+
+import time
+
+# --- ADD THIS CACHE DEFINITION NEAR YOUR OTHER CACHES (macro_cache, news_cache) ---
+gold_cache = {
+    "data": None,
+    "last_updated": 0
+}
+
+CACHE_TIMEOUT = 60  # Only fetch new data from Yahoo every 60 seconds
+
+
 @app.route('/api/gold')
 def get_gold_price():
+    global gold_cache
+    current_time = time.time()
+    
+    # 1. SERVE CACHED DATA IF FRESH (Less than 60 seconds old)
+    if gold_cache["data"] is not None and (current_time - gold_cache["last_updated"] < CACHE_TIMEOUT):
+        return jsonify(gold_cache["data"])
+
     symbol = "XAUUSD"
     try:
         # Fetch live Gold data directly from Yahoo Finance
@@ -408,7 +427,7 @@ def get_gold_price():
             round(score_macro_edge, 1)
         ]
 
-        return jsonify({
+        response_payload = {
             "symbol": symbol,
             "bid": round(current_price, 2),
             "bull_flow": round(score_macro_edge, 1),
@@ -423,9 +442,22 @@ def get_gold_price():
             "news": news,
             "posture": posture,
             "session": session
-        })
+        }
+
+        # 2. SAVE FRESH DATA TO CACHE
+        gold_cache["data"] = response_payload
+        gold_cache["last_updated"] = current_time
+
+        return jsonify(response_payload)
+
     except Exception as e:
         print(f"Error in /api/gold: {e}")
+        
+        # 3. FAIL-SAFE: If Yahoo fails/blocks, return last known cached data instead of crashing!
+        if gold_cache["data"] is not None:
+            print("⚠️ Returning last known cached gold data due to API error.")
+            return jsonify(gold_cache["data"])
+            
         return jsonify({"error": str(e), "bid": 0.00}), 500
 
 
@@ -434,4 +466,5 @@ if __name__ == '__main__':
     print("📡 8-Factor Synthesis Engine & Institutional Killzone Active.")
     app.run(host='0.0.0.0', port=10000)
 
-                    
+
+            
