@@ -35,21 +35,31 @@ def get_score(value, min_val, max_val, inverse=False):
     return max(0.0, min(100.0, score))
 
 
+
 def get_macro_data():
     global macro_cache
     current_time = time.time()
-   
+
     # Throttle requests to every 60 seconds
     if current_time - macro_cache["last_updated"] > 60:
         try:
-            dxy = yf.Ticker("DX-Y.NYB").history(period="1d")
-            us10y = yf.Ticker("^TNX").history(period="1d")
-            vix = yf.Ticker("^VIX").history(period="1d")
-           
-            us2y = yf.Ticker("US2Y=X").history(period="1d")
-            if us2y.empty:
-                us2y = yf.Ticker("^FVX").history(period="1d")
+            # --- THE FIX: ADD A CUSTOM BROWSER SESSION ---
+            import requests
+            session = requests.Session()
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            
+            # --- APPLY SESSION TO ALL MACRO TICKERS TO BYPASS YAHOO BLOCK ---
+            dxy = yf.Ticker("DX-Y.NYB", session=session).history(period="1d")
+            us10y = yf.Ticker("^TNX", session=session).history(period="1d")
+            vix = yf.Ticker("^VIX", session=session).history(period="1d")
 
+            us2y = yf.Ticker("US2Y=X", session=session).history(period="1d")
+            if us2y.empty:
+                us2y = yf.Ticker("^FVX", session=session).history(period="1d")
+
+            # Update cache if data successfully retrieved
             if not dxy.empty:
                 macro_cache["dxy"] = round(float(dxy['Close'].iloc[-1]), 2)
             if not us10y.empty:
@@ -58,16 +68,19 @@ def get_macro_data():
                 macro_cache["vix"] = round(float(vix['Close'].iloc[-1]), 2)
             if not us2y.empty:
                 macro_cache["us2y"] = round(float(us2y['Close'].iloc[-1]), 3)
-           
+
+            # Calculate Yield Curve (10Y - 2Y)
             if not us10y.empty and not us2y.empty:
                 macro_cache["yield_curve"] = round(macro_cache["us10y"] - macro_cache["us2y"], 3)
-               
+
             macro_cache["last_updated"] = current_time
+            
         except Exception as e:
             print(f"Macro Data Fetch Error: {e}")
             pass
-           
+
     return macro_cache
+
 
 
 def get_news_data():
