@@ -35,6 +35,7 @@ def get_score(value, min_val, max_val, inverse=False):
     return max(0.0, min(100.0, score))
 
 
+
 def get_macro_data():
     global macro_cache
     current_time = time.time()
@@ -46,7 +47,7 @@ def get_macro_data():
             import pandas as pd
             import requests
             
-            # 1. CREATE THE BROWSER DISGUISE
+            # 1. BROWSER DISGUISE
             session = requests.Session()
             session.headers.update({
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -54,35 +55,43 @@ def get_macro_data():
             
             tickers_list = ["DX-Y.NYB", "^TNX", "^VIX", "^FVX"]
             
-            # 2. THE FIX: APPLY THE DISGUISE TO THE BULK DOWNLOAD
-            # We must pass session=session here so Yahoo doesn't block it!
-            data = yf.download(tickers_list, period="1d", progress=False, session=session)
+            # 2. BULK DOWNLOAD (Extended to 5 days to survive weekends/holidays)
+            data = yf.download(tickers_list, period="5d", progress=False, session=session)
             
-            if not data.empty:
-                # Safely extract DXY (US Dollar Index)
-                if "DX-Y.NYB" in data['Close'] and not pd.isna(data['Close']["DX-Y.NYB"].iloc[-1]):
-                    macro_cache["dxy"] = round(float(data['Close']["DX-Y.NYB"].iloc[-1]), 2)
-                    
-                # Safely extract US10Y (10-Year Yield)
-                if "^TNX" in data['Close'] and not pd.isna(data['Close']["^TNX"].iloc[-1]):
-                    macro_cache["us10y"] = round(float(data['Close']["^TNX"].iloc[-1]), 3)
-                    
-                # Safely extract VIX (Volatility Index)
-                if "^VIX" in data['Close'] and not pd.isna(data['Close']["^VIX"].iloc[-1]):
-                    macro_cache["vix"] = round(float(data['Close']["^VIX"].iloc[-1]), 2)
-                    
-                # Safely extract US2Y (via the 5-year FVX proxy if 2Y is missing)
-                if "^FVX" in data['Close'] and not pd.isna(data['Close']["^FVX"].iloc[-1]):
-                    macro_cache["us2y"] = round(float(data['Close']["^FVX"].iloc[-1]), 3)
-                    
+            if not data.empty and 'Close' in data:
+                close_data = data['Close']
+                
+                # Safely extract DXY (Ignore NaNs to find the last actual traded price)
+                if "DX-Y.NYB" in close_data:
+                    dxy_clean = close_data["DX-Y.NYB"].dropna()
+                    if not dxy_clean.empty:
+                        macro_cache["dxy"] = round(float(dxy_clean.iloc[-1]), 2)
+                        
+                # Safely extract US10Y Yield
+                if "^TNX" in close_data:
+                    tnx_clean = close_data["^TNX"].dropna()
+                    if not tnx_clean.empty:
+                        macro_cache["us10y"] = round(float(tnx_clean.iloc[-1]), 3)
+                        
+                # Safely extract VIX
+                if "^VIX" in close_data:
+                    vix_clean = close_data["^VIX"].dropna()
+                    if not vix_clean.empty:
+                        macro_cache["vix"] = round(float(vix_clean.iloc[-1]), 2)
+                        
+                # Safely extract US2Y Yield Proxy (FVX)
+                if "^FVX" in close_data:
+                    fvx_clean = close_data["^FVX"].dropna()
+                    if not fvx_clean.empty:
+                        macro_cache["us2y"] = round(float(fvx_clean.iloc[-1]), 3)
+                        
                 # Calculate the Yield Curve
-                if macro_cache["us10y"] != 0.00 and macro_cache["us2y"] != 0.00:
+                if macro_cache["us10y"] != 0.00 and macro_cache.get("us2y", 0.00) != 0.00:
                     macro_cache["yield_curve"] = round(macro_cache["us10y"] - macro_cache["us2y"], 3)
             
             macro_cache["last_updated"] = current_time
             
         except Exception as e:
-            # flush=True forces any hidden errors to immediately print to the Render logs
             print(f"Macro Data Fetch Error: {e}", flush=True) 
             pass
 
