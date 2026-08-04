@@ -44,13 +44,19 @@ def get_macro_data():
         try:
             import yfinance as yf
             import pandas as pd
+            import requests
             
-            # THE FIX: Bulk download all macro tickers in a SINGLE request.
-            # Yahoo's bulk API allows this and won't flag your IP.
+            # 1. CREATE THE BROWSER DISGUISE
+            session = requests.Session()
+            session.headers.update({
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            })
+            
             tickers_list = ["DX-Y.NYB", "^TNX", "^VIX", "^FVX"]
             
-            # Fetch all at once quietly
-            data = yf.download(tickers_list, period="1d", progress=False)
+            # 2. THE FIX: APPLY THE DISGUISE TO THE BULK DOWNLOAD
+            # We must pass session=session here so Yahoo doesn't block it!
+            data = yf.download(tickers_list, period="1d", progress=False, session=session)
             
             if not data.empty:
                 # Safely extract DXY (US Dollar Index)
@@ -76,7 +82,7 @@ def get_macro_data():
             macro_cache["last_updated"] = current_time
             
         except Exception as e:
-            # flush=True forces any hidden errors to immediately print to the Render logs!
+            # flush=True forces any hidden errors to immediately print to the Render logs
             print(f"Macro Data Fetch Error: {e}", flush=True) 
             pass
 
