@@ -1,5 +1,9 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request, abort
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+import uuid
+import json
+import os
 import yfinance as yf
 import requests
 import time
@@ -9,9 +13,29 @@ from datetime import datetime, timezone
 app = Flask(__name__)
 CORS(app)
 
-@app.route('/')
-def serve_dashboard():
-    return render_template('index.html')
+# --- DATABASE CONFIGURATION ---
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///students.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+# Owner / Admin Email (Full Access Bypass)
+ADMIN_EMAIL = "bakarekehinde383@gmail.com"
+
+# --- FLUTTERWAVE CONFIGURATION ---
+# Fetches keys safely from Environment Variables (or falls back to placeholders)
+FLW_SECRET_KEY = os.environ.get("FLW_SECRET_KEY", "FLWSECK_TEST-YOUR_ACTUAL_SECRET_KEY_HERE")
+FLW_SECRET_HASH = os.environ.get("FLW_SECRET_HASH", "KFX_Webhook_Secure_2026")
+
+# Database Model for Student Subscriptions
+class Student(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    customer_code = db.Column(db.String(50), nullable=True)
+    has_active_sub = db.Column(db.Boolean, default=False)
+
+# Initialize the database table on startup
+with app.app_context():
+    db.create_all()
 
 # Global Caches to throttle external API calls
 macro_cache = {
@@ -24,6 +48,124 @@ macro_cache = {
 }
 news_cache = {"articles": [], "last_updated": 0}
 
+@app.route('/')
+def serve_dashboard():
+    return render_template('index.html')
+
+
+# ---------------------------------------------------------
+# ROUTE 1: DYNAMIC CONFIG ENDPOINT (PRICE)
+# ---------------------------------------------------------
+@app.route('/api/config', methods=['GET'])
+def get_config():
+    """Serves the current subscription price from the environment to the frontend."""
+    price = os.environ.get("KFX_SUB_PRICE", "15000")
+    return jsonify({"price": price})
+
+
+# ---------------------------------------------------------
+# ROUTE 2: INITIALIZE FLUTTERWAVE PAYMENT (WITH ADMIN BYPASS)
+# ---------------------------------------------------------
+@app.route('/api/pay', methods=['POST'])
+def initialize_payment():
+    try:
+        data = request.get_json() or {}
+        user_email = data.get("email", "").strip().lower()
+
+        if not user_email:
+            return jsonify({"status": "error", "message": "Email is required"}), 400
+
+        # --- ADMIN BYPASS DETECTED ---
+        if user_email == ADMIN_EMAIL.strip().lower():
+            return jsonify({
+                "status": "success", 
+                "is_admin": True,
+                "message": "Welcome back, Admin!",
+                "checkout_url": "bypass" 
+            })
+
+        # --- REGULAR USER FLUTTERWAVE CHECKOUT ---
+        tx_ref = f"KFX-GOLD-{uuid.uuid4().hex[:8]}"
+        
+        # Dynamically fetch the price from the server environment
+        sub_price = os.environ.get("KFX_SUB_PRICE", "15000")
+        
+        payload = {
+            "tx_ref": tx_ref,
+            "amount": sub_price,  # Dynamic price applied here
+            "currency": "NGN",
+            "redirect_url": "https://kfx-gold-intelligence-tool.onrender.com/", 
+            "customer": {
+                "email": user_email,
+                "name": "KFX Subscriber"
+            },
+            "customizations": {
+                "title": "KFX Gold Intelligence Tool",
+                "description": "Premium Access Subscription"
+            }
+        }
+        
+        headers = {
+            "Authorization": f"Bearer {FLW_SECRET_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        response = requests.post("https://api.flutterwave.com/v3/payments", json=payload, headers=headers)
+        res_data = response.json()
+        
+        if res_data.get("status") == "success":
+            return jsonify({
+                "status": "success", 
+                "is_admin": False,
+                "checkout_url": res_data["data"]["link"]
+            })
+        else:
+            return jsonify({
+                "status": "error", 
+                "message": res_data.get("message", "Could not initialize Flutterwave payment")
+            }), 400
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# ---------------------------------------------------------
+# ROUTE 3: FLUTTERWAVE WEBHOOK LISTENER
+# ---------------------------------------------------------
+@app.route('/api/flutterwave-webhook', methods=['POST'])
+def flutterwave_webhook():
+    """Receives automated payment events directly from Flutterwave servers."""
+    signature = request.headers.get("verif-hash")
+    
+    # Verify request signature matching your custom secret hash
+    if not signature or signature != FLW_SECRET_HASH:
+        print("⚠️ Unauthorized Webhook Attempt Blocked!")
+        abort(401)
+    
+    event_data = request.json or {}
+    event_type = event_data.get("event")
+    data = event_data.get("data", {})
+    
+    email = data.get("customer", {}).get("email")
+    if not email:
+        return jsonify({"status": "ignored"}), 200
+
+    email_clean = email.strip().lower()
+
+    # Find or register student in database
+    student = Student.query.filter_by(email=email_clean).first()
+    if not student:
+        student = Student(email=email_clean, customer_code=data.get("tx_ref"))
+        db.session.add(student)
+
+    # Process automated payment event
+    if event_type == "charge.completed" and data.get("status") == "successful":
+        student.has_active_sub = True
+        print(f"✅ Subscription activated via Flutterwave for: {email_clean}")
+
+    db.session.commit()
+    return jsonify({"status": "success"}), 200
+
 
 def get_score(value, min_val, max_val, inverse=False):
     """Normalizes any raw metric into a strict 0 to 100 score."""
@@ -35,75 +177,44 @@ def get_score(value, min_val, max_val, inverse=False):
     return max(0.0, min(100.0, score))
 
 
-
 def get_macro_data():
     global macro_cache
     current_time = time.time()
-
-    # Throttle requests to every 60 seconds
+   
     if current_time - macro_cache["last_updated"] > 60:
         try:
-            import yfinance as yf
-            import pandas as pd
-            import requests
-            
-            # 1. BROWSER DISGUISE
-            session = requests.Session()
-            session.headers.update({
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            })
-            
-            tickers_list = ["DX-Y.NYB", "^TNX", "^VIX", "^FVX"]
-            
-            # 2. BULK DOWNLOAD (Extended to 5 days to survive weekends/holidays)
-            data = yf.download(tickers_list, period="5d", progress=False, session=session)
-            
-            if not data.empty and 'Close' in data:
-                close_data = data['Close']
-                
-                # Safely extract DXY (Ignore NaNs to find the last actual traded price)
-                if "DX-Y.NYB" in close_data:
-                    dxy_clean = close_data["DX-Y.NYB"].dropna()
-                    if not dxy_clean.empty:
-                        macro_cache["dxy"] = round(float(dxy_clean.iloc[-1]), 2)
-                        
-                # Safely extract US10Y Yield
-                if "^TNX" in close_data:
-                    tnx_clean = close_data["^TNX"].dropna()
-                    if not tnx_clean.empty:
-                        macro_cache["us10y"] = round(float(tnx_clean.iloc[-1]), 3)
-                        
-                # Safely extract VIX
-                if "^VIX" in close_data:
-                    vix_clean = close_data["^VIX"].dropna()
-                    if not vix_clean.empty:
-                        macro_cache["vix"] = round(float(vix_clean.iloc[-1]), 2)
-                        
-                # Safely extract US2Y Yield Proxy (FVX)
-                if "^FVX" in close_data:
-                    fvx_clean = close_data["^FVX"].dropna()
-                    if not fvx_clean.empty:
-                        macro_cache["us2y"] = round(float(fvx_clean.iloc[-1]), 3)
-                        
-                # Calculate the Yield Curve
-                if macro_cache["us10y"] != 0.00 and macro_cache.get("us2y", 0.00) != 0.00:
-                    macro_cache["yield_curve"] = round(macro_cache["us10y"] - macro_cache["us2y"], 3)
-            
+            dxy = yf.Ticker("DX-Y.NYB").history(period="1d")
+            us10y = yf.Ticker("^TNX").history(period="1d")
+            vix = yf.Ticker("^VIX").history(period="1d")
+           
+            us2y = yf.Ticker("US2Y=X").history(period="1d")
+            if us2y.empty:
+                us2y = yf.Ticker("^FVX").history(period="1d")
+
+            if not dxy.empty:
+                macro_cache["dxy"] = round(float(dxy['Close'].iloc[-1]), 2)
+            if not us10y.empty:
+                macro_cache["us10y"] = round(float(us10y['Close'].iloc[-1]), 3)
+            if not vix.empty:
+                macro_cache["vix"] = round(float(vix['Close'].iloc[-1]), 2)
+            if not us2y.empty:
+                macro_cache["us2y"] = round(float(us2y['Close'].iloc[-1]), 3)
+           
+            if not us10y.empty and not us2y.empty:
+                macro_cache["yield_curve"] = round(macro_cache["us10y"] - macro_cache["us2y"], 3)
+               
             macro_cache["last_updated"] = current_time
-            
         except Exception as e:
-            print(f"Macro Data Fetch Error: {e}", flush=True) 
+            print(f"Macro Data Fetch Error: {e}")
             pass
-
+           
     return macro_cache
-
 
 
 def get_news_data():
     global news_cache
     current_time = time.time()
    
-    # Throttle news requests to every 5 minutes
     if current_time - news_cache.get("last_updated", 0) > 300:
         try:
             headers = {'User-Agent': 'Mozilla/5.0'}
@@ -144,10 +255,7 @@ def get_news_data():
 
 
 def calculate_flow_yf(hist_df):
-    """
-    Calculates bull/bear volume flow averaged across multiple candles
-    to eliminate micro-noise and 10-second whipsaws.
-    """
+    """Calculates bull/bear volume flow averaged across multiple candles."""
     if hist_df is None or hist_df.empty or len(hist_df) == 0:
         return {"bull": 50.0, "bear": 50.0}
    
@@ -168,13 +276,12 @@ def calculate_flow_yf(hist_df):
 
 
 def get_killzone():
-    """Maps UTC time to exact ICT/Institutional Killzones and Volatility profiles."""
+    """Maps UTC time to exact ICT/Institutional Killzones."""
     now_utc = datetime.now(timezone.utc)
     hour = now_utc.hour
     minute = now_utc.minute
     time_decimal = hour + (minute / 60.0)
 
-    # 07:00 - 10:00 UTC: London Open Killzone
     if 7.0 <= time_decimal < 10.0:
         return {
             "name": "LONDON OPEN KILLZONE",
@@ -183,7 +290,6 @@ def get_killzone():
             "desc": "Judas swing / Initial liquidity sweep active",
             "color": "text-yellow-500"
         }
-    # 10:00 - 12:00 UTC: London Late / Pre-NY (BRIDGING THE GAP)
     elif 10.0 <= time_decimal < 12.0:
         return {
             "name": "LONDON LATE / PRE-NY",
@@ -192,7 +298,6 @@ def get_killzone():
             "desc": "London mid-day lull before NY Session opens",
             "color": "text-blue-400"
         }
-    # 12:00 - 16:00 UTC: NY / London Overlap (Gold Peak Volatility)
     elif 12.0 <= time_decimal < 16.0:
         return {
             "name": "NY / LONDON OVERLAP",
@@ -201,7 +306,6 @@ def get_killzone():
             "desc": "Peak Institutional Gold volume window",
             "color": "text-red-500"
         }
-    # 16:00 - 20:00 UTC: New York Late Session
     elif 16.0 <= time_decimal < 20.0:
         return {
             "name": "NEW YORK SESSION",
@@ -210,7 +314,6 @@ def get_killzone():
             "desc": "Post-overlap continuation or retracement",
             "color": "text-blue-500"
         }
-    # 00:00 - 07:00 UTC: Asian / Tokyo Session
     elif 0.0 <= time_decimal < 7.0:
         return {
             "name": "TOKYO (ASIAN) SESSION",
@@ -219,7 +322,6 @@ def get_killzone():
             "desc": "Asia range formation / High liquidity build",
             "color": "text-slate-400"
         }
-    # 20:00 - 24:00 UTC: Dead Zone
     else:
         return {
             "name": "DEAD ZONE / SYDNEY",
@@ -231,56 +333,48 @@ def get_killzone():
 
 
 def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news, total_score, killzone):
-    """
-    Synthesizes volume anomalies, volatility compression, macro edge,
-    and killzone timing to determine actionable market posture.
-    """
+    """Synthesizes volume anomalies, macro edge, and killzones into actionable posture."""
    
-    # 1. HARD SAFETY RULE: IMMINENT HIGH-IMPACT NEWS LOCKOUT
     if any(n.get('is_imminent', False) for n in news):
         return {
             "action": "LOCKOUT: HIGH IMPACT NEWS IMMINENT",
             "bias": "PROTECTED",
             "ladder_state": "OBSERVE",
             "color": "text-yellow-500",
-            "narrative": "System Locked. High-impact economic release dropping within 2 hours. High danger of spread widening and algorithmic whipsaws.",
+            "narrative": "System Locked. High-impact economic release dropping within 2 hours.",
             "score": total_score
         }
 
-    # 2. VOLUME SQUEEZE DETECTION (Low Volatility + Spiking Tick Volume)
     if volatility_score < 40 and rel_volume > 1.3:
         return {
             "action": "PREPARE: VOLUME SQUEEZE IN PROGRESS",
             "bias": "ACCUMULATION",
             "ladder_state": "PREPARE",
             "color": "text-orange-500",
-            "narrative": f"Price range is heavily compressed while relative tick volume is elevated ({round(rel_volume, 2)}x avg). Institutional position building underway. Await session breakout.",
+            "narrative": f"Price range compressed while tick volume is elevated ({round(rel_volume, 2)}x avg). Institutional position building underway.",
             "score": total_score
         }
 
-    # 3. VOLUME EXHAUSTION CLIMAX (Extreme Volatility + Massive Volume Spike)
     if volatility_score > 85 and rel_volume > 2.0:
         return {
             "action": "MANAGE: VOLUME EXHAUSTION DETECTED",
             "bias": "EXHAUSTION",
             "ladder_state": "MANAGE",
             "color": "text-red-400",
-            "narrative": "Climactic volume spike detected at extended price levels. High probability of profit-taking or sharp mean reversion.",
+            "narrative": "Climactic volume spike at extended price levels. High probability of profit-taking.",
             "score": total_score
         }
 
-    # 4. DEAD ZONE / OFF-HOURS WARNING
     if killzone["vol"] == "VERY LOW":
         return {
             "action": "STAND ASIDE: ILLIQUID SESSION",
             "bias": "NEUTRAL",
             "ladder_state": "OBSERVE",
             "color": "text-slate-500",
-            "narrative": "Market is in the off-hours Dead Zone. Low liquidity can cause unpredictable slippage and artificial tick noise.",
+            "narrative": "Market is in the off-hours Dead Zone. Low liquidity risk.",
             "score": total_score
         }
 
-    # 5. DIRECTIONAL MOMENTUM / CONVICTION POSTURE
     if total_score >= 68 or fast_flow["bull"] >= 70:
         if macro['us10y'] < 4.25 and macro['dxy'] < 105.0:
             return {
@@ -288,7 +382,7 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
                 "bias": "BULLISH",
                 "ladder_state": "ACT",
                 "color": "text-emerald-500",
-                "narrative": f"Global score strong at {total_score}/100. Fast tape ({fast_flow['bull']}%) aligned with supportive yield/DXY dynamics. Favorable long execution window.",
+                "narrative": f"Global score strong at {total_score}/100. Fast tape ({fast_flow['bull']}%) aligned with yields/DXY.",
                 "score": total_score
             }
         else:
@@ -297,7 +391,7 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
                 "bias": "BULLISH",
                 "ladder_state": "PREPARE",
                 "color": "text-emerald-400",
-                "narrative": f"Intraday flow is bullish ({fast_flow['bull']}%), but macro yields ({macro['us10y']}%) present overhead resistance. Tighten trade targets.",
+                "narrative": f"Intraday flow is bullish ({fast_flow['bull']}%), but macro yields present resistance.",
                 "score": total_score
             }
 
@@ -308,7 +402,7 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
                 "bias": "BEARISH",
                 "ladder_state": "ACT",
                 "color": "text-red-500",
-                "narrative": f"Global score weak at {total_score}/100. Strong Dollar/Yield environment validating aggressive sell-side pressure.",
+                "narrative": f"Global score weak at {total_score}/100. Dollar/Yield environment validating sell-side pressure.",
                 "score": total_score
             }
         else:
@@ -317,84 +411,65 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
                 "bias": "BEARISH",
                 "ladder_state": "PREPARE",
                 "color": "text-red-400",
-                "narrative": f"Fast tape is bearish ({fast_flow['bear']}%), but macro baseline remains elevated. Counter-trend short risks present.",
+                "narrative": f"Fast tape is bearish ({fast_flow['bear']}%), but macro baseline remains elevated.",
                 "score": total_score
             }
 
-    # 6. DEFAULT NEUTRAL STATE
     return {
         "action": "OBSERVE: NEUTRAL RANGE",
         "bias": "NEUTRAL",
         "ladder_state": "OBSERVE",
         "color": "text-slate-400",
-        "narrative": f"Synthesis score balanced at {total_score}/100 inside {killzone['name']}. No clear volume or structural expansion. Stand aside.",
+        "narrative": f"Synthesis score balanced at {total_score}/100 inside {killzone['name']}. Stand aside.",
         "score": total_score
     }
 
 
-
-import time
-
-# --- ADD THIS CACHE DEFINITION NEAR YOUR OTHER CACHES (macro_cache, news_cache) ---
-gold_cache = {
-    "data": None,
-    "last_updated": 0
-}
-
-CACHE_TIMEOUT = 60  # Only fetch new data from Yahoo every 60 seconds
-
-
+# ---------------------------------------------------------
+# ROUTE 4: GATED API ENDPOINT (GOLD DATA)
+# ---------------------------------------------------------
 @app.route('/api/gold')
 def get_gold_price():
-    global gold_cache
-    current_time = time.time()
-    
-    # 1. SERVE CACHED DATA IF FRESH
-    if gold_cache["data"] is not None and (current_time - gold_cache["last_updated"] < CACHE_TIMEOUT):
-        return jsonify(gold_cache["data"])
+    # 1. Access Authentication & Authorization Check
+    user_email = request.headers.get('Authorization')
+    if not user_email:
+        return jsonify({"error": "Unauthorized. Please enter your email."}), 401
 
+    clean_email = user_email.strip().lower()
+
+    # Admin Bypass Check
+    if clean_email == ADMIN_EMAIL.strip().lower():
+        pass  # Admin granted full access
+    else:
+        # Student Subscription Verification
+        student = Student.query.filter_by(email=clean_email).first()
+        if not student or not student.has_active_sub:
+            return jsonify({
+                "error": "Subscription expired or inactive.",
+                "status": "PAYMENT_REQUIRED"
+            }), 403
+
+    # 2. Main Gold Engine Calculations
     symbol = "XAUUSD"
     try:
-        # --- THE FIX: ADD A CUSTOM BROWSER SESSION ---
-        import requests
-        session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        })
-        
-        # 2. Fetch live Gold Futures FIRST (Yahoo blocks futures less often)
-        ticker = yf.Ticker("GC=F", session=session)
+        ticker = yf.Ticker("XAUUSD=X")
         rates_d1 = ticker.history(period="1mo", interval="1d")
         rates_h1 = ticker.history(period="5d", interval="1h")
         rates_m15 = ticker.history(period="2d", interval="15m")
        
-        # 3. Fallback to Forex Spot if Futures are blocked
         if rates_d1.empty or rates_h1.empty:
-            ticker = yf.Ticker("XAUUSD=X", session=session)
+            ticker = yf.Ticker("GC=F")
             rates_d1 = ticker.history(period="1mo", interval="1d")
             rates_h1 = ticker.history(period="5d", interval="1h")
             rates_m15 = ticker.history(period="2d", interval="15m")
 
-        # 4. CRASH PREVENTION: If Yahoo completely blocked both, safely trigger the exception
-        if rates_d1.empty or rates_h1.empty:
-            raise ValueError("Yahoo Finance is blocking the server IP.")
-
         current_price = float(rates_h1['Close'].iloc[-1])
         today_d1 = rates_d1.iloc[-1]
-        
-        # ... [KEEP ALL YOUR INTRADAY TECHNICAL CALCULATIONS BELOW THIS EXACTLY THE SAME] ...
 
-
-
-        # Intraday Technical Calculations
         d1_range = float(today_d1['High'] - today_d1['Low'])
-       
-        # ADR 14 Calculation
         adr_14 = float((rates_d1['High'] - rates_d1['Low']).tail(14).mean())
         volatility_score = 50 if adr_14 == 0 else max(0, min(100, (d1_range / adr_14) * 50))
-        volume_score = min(100, (float(today_d1.get('Volume', 50000)) / 50000) * 100)
 
-        # 1H Range calculation for Radar Axis 7
         if not rates_h1.empty:
             recent_high = float(rates_h1['High'].tail(14).max())
             recent_low = float(rates_h1['Low'].tail(14).min())
@@ -402,7 +477,6 @@ def get_gold_price():
         else:
             price_range_1h = 10.0
 
-        # Relative Tick Volume Calculation
         if len(rates_h1) >= 14:
             current_h1_vol = float(rates_h1['Volume'].iloc[-1])
             avg_h1_vol = float(rates_h1['Volume'].tail(14).mean())
@@ -410,21 +484,18 @@ def get_gold_price():
         else:
             rel_volume = 1.0
 
-        # Multi-Timeframe Flow Calculations (SMOOTHED OVER MULTIPLE CANDLES)
-        h4_data = calculate_flow_yf(rates_h1.tail(16))      # Last 16 hours
-        h1_data = calculate_flow_yf(rates_h1.tail(4))       # Last 4 hours
-        m15_data = calculate_flow_yf(rates_m15.tail(4))     # Last 1 hour (4x15m candles)
+        h4_data = calculate_flow_yf(rates_h1.tail(16))
+        h1_data = calculate_flow_yf(rates_h1.tail(4))
+        m15_data = calculate_flow_yf(rates_m15.tail(4))
 
         fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
         fast_bear = round(100.0 - fast_bull, 1)
         fast_flow_data = {"bull": fast_bull, "bear": fast_bear}
 
-        # Fetch Cached Macro, News & Session Data
         macro = get_macro_data()
         news = get_news_data()
         session = get_killzone()
 
-        # --- 8-FACTOR SYNTHESIS SCORING ENGINE ---
         score_yield = get_score(macro['us10y'], 3.0, 5.5, inverse=True)
         score_curve = get_score(macro['yield_curve'], -1.0, 1.0, inverse=True)
         score_vix = get_score(macro['vix'], 12.0, 35.0, inverse=False)
@@ -432,23 +503,19 @@ def get_gold_price():
         score_4h = h4_data['bull']
         score_fast = fast_bull
         
-        # --- DIRECTION-AWARE VOLATILITY RANGE FIX ---
+        # Direction-Aware Volatility Range Fix
         raw_range_score = get_score(price_range_1h, 5.0, 30.0, inverse=False)
         if fast_bull < 50.0:
-            # Bearish trend: High range/volatility pulls the score DOWN
             score_range = 100.0 - raw_range_score
         else:
-            # Bullish trend: High range/volatility pushes the score UP
             score_range = raw_range_score
 
         score_macro_edge = (score_yield + score_curve + score_vix + score_dxy) / 4.0
 
-        # Calculate Central Regime Score (0-100)
         total_score = int(round(
             (score_yield + score_curve + score_vix + score_dxy + score_4h + score_fast + score_range + score_macro_edge) / 8.0
         ))
 
-        # Action Posture Synthesis
         posture = generate_action_posture(
             fast_flow_data,
             volatility_score,
@@ -459,7 +526,6 @@ def get_gold_price():
             session
         )
 
-        # 8-Factor Array aligned with Frontend Radar Axes
         synthesis_8_factors = [
             round(score_yield, 1),
             round(score_curve, 1),
@@ -471,7 +537,7 @@ def get_gold_price():
             round(score_macro_edge, 1)
         ]
 
-        response_payload = {
+        return jsonify({
             "symbol": symbol,
             "bid": round(current_price, 2),
             "bull_flow": round(score_macro_edge, 1),
@@ -486,29 +552,17 @@ def get_gold_price():
             "news": news,
             "posture": posture,
             "session": session
-        }
-
-        # 2. SAVE FRESH DATA TO CACHE
-        gold_cache["data"] = response_payload
-        gold_cache["last_updated"] = current_time
-
-        return jsonify(response_payload)
-
+        })
     except Exception as e:
         print(f"Error in /api/gold: {e}")
-        
-        # 3. FAIL-SAFE: If Yahoo fails/blocks, return last known cached data instead of crashing!
-        if gold_cache["data"] is not None:
-            print("⚠️ Returning last known cached gold data due to API error.")
-            return jsonify(gold_cache["data"])
-            
         return jsonify({"error": str(e), "bid": 0.00}), 500
 
 
 if __name__ == '__main__':
-    print("🚀 KFX Gold Intelligence Command Backend Online!")
-    print("📡 8-Factor Synthesis Engine & Institutional Killzone Active.")
+    print("🚀 KFX Gold Intelligence Backend Online!")
+    print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL}")
     app.run(host='0.0.0.0', port=10000)
+
 
 
             
