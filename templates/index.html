@@ -19,7 +19,35 @@
         .glow-gold { box-shadow: 0 0 12px rgba(234, 179, 8, 0.3); }
     </style>
 </head>
-<body class="text-slate-400 font-mono p-4 min-h-screen text-xs selection:bg-red-900 selection:text-white">
+<body class="text-slate-400 font-mono p-4 min-h-screen text-xs selection:bg-red-900 selection:text-white relative">
+
+    <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 hidden">
+        <div class="bg-slate-900 border border-slate-700 p-8 rounded-lg max-w-md w-full text-center shadow-2xl mx-4">
+            <h2 class="text-2xl font-bold text-yellow-500 mb-4" id="modal-title">KFX Gold Intelligence</h2>
+            <p class="text-slate-300 mb-6 text-sm" id="modal-message">Please enter your email to access the live dashboard.</p>
+            
+            <div id="login-form">
+                <input type="email" id="user-email-input" placeholder="Enter your email address" 
+                       class="w-full p-3 rounded bg-slate-800 text-white border border-slate-600 mb-4 focus:outline-none focus:border-yellow-500 text-sm">
+                <button onclick="loginUser()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded transition-colors text-sm">
+                    Access Dashboard
+                </button>
+            </div>
+
+            <div id="payment-form" class="hidden">
+                <button onclick="initiateFlutterwaveCheckout()" id="pay-btn"
+                   class="block w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded transition-colors mb-4 text-sm">
+                    Subscribe (Loading price...)
+                </button>
+                <p id="pay-loading" class="hidden text-yellow-500 text-xs mb-4 font-bold animate-pulse">
+                    Generating secure checkout link...
+                </p>
+                <button onclick="resetModal()" class="text-slate-400 hover:text-white underline text-xs">
+                    I already paid, let me enter my email again
+                </button>
+            </div>
+        </div>
+    </div>
 
     <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
 
@@ -191,7 +219,7 @@
                     <div class="bg-red-500 h-full flex-1 transition-all duration-500"></div>
                 </div>
             </div>
-
+            
             <div>
                 <div class="flex justify-between text-[10px] mb-1">
                     <span class="text-slate-500 font-bold uppercase">Intraday Flow (2H)</span>
@@ -276,7 +304,6 @@
             const seconds = String(now.getUTCSeconds()).padStart(2, '0');
             document.getElementById('gmt-clock').innerText = `${hours}:${minutes}:${seconds} GMT`;
 
-            // Session Countdown Logic (Approximated based on GMT)
             const h = now.getUTCHours();
             let countdown = "";
             if (h >= 13 && h < 21) {
@@ -326,7 +353,6 @@
         });
 
         function updateExecutionLayer(h4Bull, fastBull) {
-            // Interpolate 2H based on 4H and Fast
             const h2Bull = (h4Bull + fastBull) / 2;
             
             const frames = [
@@ -355,151 +381,240 @@
             });
         }
 
-        // MAIN FETCH
-        function fetchGoldData() {
-            fetch('/api/gold')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.bid > 0) {
-                        document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
+        // --- FETCH DYNAMIC SUBSCRIPTION PRICE ---
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const data = await response.json();
+                
+                // Formats "15000" into "15,000"
+                const formattedPrice = Number(data.price).toLocaleString();
+                document.getElementById('pay-btn').innerText = `Subscribe (₦${formattedPrice})`;
+            } catch (err) {
+                console.error("Failed to load price config", err);
+                document.getElementById('pay-btn').innerText = `Subscribe Now`; // Fallback
+            }
+        }
+        fetchConfig();
+
+        // --- AUTHENTICATION LOGIC ---
+        let fetchInterval;
+
+        function loginUser() {
+            const email = document.getElementById('user-email-input').value;
+            if (email) {
+                localStorage.setItem('kfx_user_email', email.trim().toLowerCase());
+                document.getElementById('auth-modal').classList.add('hidden');
+                
+                fetchGoldData();
+                if (!fetchInterval) fetchInterval = setInterval(fetchGoldData, 2000);
+            }
+        }
+
+        function resetModal() {
+            document.getElementById('payment-form').classList.add('hidden');
+            document.getElementById('pay-btn').classList.remove('hidden');
+            document.getElementById('pay-loading').classList.add('hidden');
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('modal-title').innerText = "KFX Gold Intelligence";
+            document.getElementById('modal-message').innerText = "Please enter your email to access the live dashboard.";
+        }
+
+        async function initiateFlutterwaveCheckout() {
+            const email = localStorage.getItem('kfx_user_email');
+            if (!email) return;
+
+            document.getElementById('pay-btn').classList.add('hidden');
+            document.getElementById('pay-loading').classList.remove('hidden');
+
+            try {
+                const response = await fetch('/api/pay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === "success" && data.checkout_url) {
+                    window.location.href = data.checkout_url;
+                } else {
+                    alert("Payment Error: " + (data.message || "Could not initialize checkout"));
+                    resetModal();
+                }
+            } catch (err) {
+                console.error(err);
+                alert("Could not connect to payment server. Check your connection.");
+                resetModal();
+            }
+        }
+
+        async function fetchGoldData() {
+            const userEmail = localStorage.getItem('kfx_user_email');
+            
+            if (!userEmail) {
+                document.getElementById('auth-modal').classList.remove('hidden');
+                if (fetchInterval) clearInterval(fetchInterval);
+                fetchInterval = null;
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/gold', {
+                    headers: {
+                        'Authorization': userEmail
+                    }
+                });
+
+                if (response.status === 401 || response.status === 403) {
+                    document.getElementById('auth-modal').classList.remove('hidden');
+                    document.getElementById('login-form').classList.add('hidden');
+                    document.getElementById('payment-form').classList.remove('hidden');
+                    document.getElementById('modal-title').innerText = "Subscription Required";
+                    document.getElementById('modal-message').innerText = "Your account is not active. Please subscribe via Flutterwave to continue.";
+                    
+                    if (fetchInterval) clearInterval(fetchInterval);
+                    fetchInterval = null;
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.bid > 0) {
+                    document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
+                    
+                    if (data.macro) {
+                        document.getElementById('macro-us10y').innerText = `${data.macro.us10y.toFixed(3)}%`;
+                        document.getElementById('macro-dxy').innerText = data.macro.dxy.toFixed(2);
                         
-                        // MACRO NUMBERS & BARS
-                        if (data.macro) {
-                            document.getElementById('macro-us10y').innerText = `${data.macro.us10y.toFixed(3)}%`;
-                            document.getElementById('macro-dxy').innerText = data.macro.dxy.toFixed(2);
-                            
-                            // Simulate a macro "Edge" score from DXY and Yield
-                            const macroEdge = (50 - ((data.macro.us10y - 1.5) * 20) - ((data.macro.dxy - 100) * 2));
-                            const clampedEdge = Math.max(-50, Math.min(50, macroEdge));
-                            
-                            document.getElementById('macro-edge-val').innerText = `${clampedEdge > 0 ? '+' : ''}${clampedEdge.toFixed(1)} EDGE`;
-                            
-                            const biasLabel = document.getElementById('macro-bias-label');
-                            if (clampedEdge > 10) {
-                                biasLabel.innerText = "LEANING BULLISH";
-                                biasLabel.className = "text-emerald-400 uppercase font-bold text-[10px]";
-                            } else if (clampedEdge < -10) {
-                                biasLabel.innerText = "LEANING BEARISH";
-                                biasLabel.className = "text-red-400 uppercase font-bold text-[10px]";
-                            } else {
-                                biasLabel.innerText = "NEUTRAL EDGE";
-                                biasLabel.className = "text-slate-400 uppercase font-bold text-[10px]";
-                            }
-
-                            const normalizedBull = 50 + clampedEdge;
-                            document.getElementById('macro-bull-bar').style.width = `${normalizedBull}%`;
-                            document.getElementById('macro-bear-bar').style.width = `${100 - normalizedBull}%`;
-
-                            // INVALIDATION STATUS UPDATES
-                            const yieldInv = document.getElementById('invalidation-yield-status');
-                            if (data.macro.us10y >= 2.00) {
-                                yieldInv.innerText = "TRIGGERED";
-                                yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
-                            } else if (data.macro.us10y >= 1.80) {
-                                yieldInv.innerText = "NEAR";
-                                yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
-                            } else {
-                                yieldInv.innerText = "FAR";
-                                yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
-                            }
-
-                            const dxyInv = document.getElementById('invalidation-dxy-status');
-                            if (data.macro.dxy >= 108.50) {
-                                dxyInv.innerText = "TRIGGERED";
-                                dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
-                            } else if (data.macro.dxy >= 106.00) {
-                                dxyInv.innerText = "NEAR";
-                                dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
-                            } else {
-                                dxyInv.innerText = "FAR";
-                                dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
-                            }
-                        }
-
-                        // EXECUTION LAYER
-                        if (data.multi_flow) {
-                            updateExecutionLayer(data.multi_flow.h4.bull, data.multi_flow.fast.bull);
+                        const macroEdge = (50 - ((data.macro.us10y - 1.5) * 20) - ((data.macro.dxy - 100) * 2));
+                        const clampedEdge = Math.max(-50, Math.min(50, macroEdge));
+                        
+                        document.getElementById('macro-edge-val').innerText = `${clampedEdge > 0 ? '+' : ''}${clampedEdge.toFixed(1)} EDGE`;
+                        
+                        const biasLabel = document.getElementById('macro-bias-label');
+                        if (clampedEdge > 10) {
+                            biasLabel.innerText = "LEANING BULLISH";
+                            biasLabel.className = "text-emerald-400 uppercase font-bold text-[10px]";
+                        } else if (clampedEdge < -10) {
+                            biasLabel.innerText = "LEANING BEARISH";
+                            biasLabel.className = "text-red-400 uppercase font-bold text-[10px]";
                         } else {
-                            updateExecutionLayer(data.bull_flow || 50, data.bull_flow || 50);
+                            biasLabel.innerText = "NEUTRAL EDGE";
+                            biasLabel.className = "text-slate-400 uppercase font-bold text-[10px]";
                         }
 
-                        // SCORE & FLOW
-                        const supportVal = data.bull_flow;
-                        const opposeVal = data.bear_flow;
-                        document.getElementById('support-pct').innerText = `${supportVal.toFixed(1)}%`;
-                        document.getElementById('oppose-pct').innerText = `${opposeVal.toFixed(1)}%`;
-                        document.getElementById('support-bar').style.width = `${supportVal}%`;
-                        document.getElementById('oppose-bar').style.width = `${opposeVal}%`;
+                        const normalizedBull = 50 + clampedEdge;
+                        document.getElementById('macro-bull-bar').style.width = `${normalizedBull}%`;
+                        document.getElementById('macro-bear-bar').style.width = `${100 - normalizedBull}%`;
 
-                        document.getElementById('radar-support').innerText = `${supportVal.toFixed(1)}%`;
-                        document.getElementById('radar-oppose').innerText = `${opposeVal.toFixed(1)}%`;
-                        
-                        const netEdgeVal = (supportVal - opposeVal).toFixed(1);
-                        const netEdgeEl = document.getElementById('radar-net-edge');
-                        netEdgeEl.innerText = (netEdgeVal > 0 ? `+${netEdgeVal}` : netEdgeVal);
-                        netEdgeEl.className = netEdgeVal >= 0 ? "text-emerald-400 font-bold text-xs" : "text-red-400 font-bold text-xs";
-
-                        if (data.posture) {
-                            const score = data.posture.score;
-                            document.getElementById('top-score').innerText = score;
-                            document.getElementById('regime-score-val').innerText = score;
-                            document.getElementById('center-radar-score').innerText = score;
-
-                            const bias = data.posture.bias;
-                            document.getElementById('regime-score-label').innerText = bias;
-
-                            document.getElementById('narrative-title').innerText = data.posture.action;
-                            document.getElementById('narrative-desc').innerText = data.posture.narrative;
-                            document.getElementById('posture-headline').innerText = data.posture.action;
-                            
-                            if (data.posture.color) {
-                                document.getElementById('narrative-title').className = `text-base md:text-lg font-bold tracking-tight mb-1 transition-colors ${data.posture.color}`;
-                            }
-
-                            const ls = data.posture.ladder_state || "OBSERVE";
-                            ['observe', 'prepare', 'act', 'manage'].forEach(l => {
-                                document.getElementById(`ladder-${l}`).className = "py-1 rounded bg-slate-950 text-slate-600 border border-slate-800/50";
-                            });
-                            if (ls === "PREPARE") document.getElementById('ladder-prepare').className = "py-1 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40 font-bold glow-gold";
-                            else if (ls === "ACT") document.getElementById('ladder-act').className = "py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold glow-green";
-                            else if (ls === "MANAGE") document.getElementById('ladder-manage').className = "py-1 rounded bg-red-500/20 text-red-400 border border-red-500/40 font-bold glow-red";
-                            else document.getElementById('ladder-observe').className = "py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold";
+                        const yieldInv = document.getElementById('invalidation-yield-status');
+                        if (data.macro.us10y >= 2.00) {
+                            yieldInv.innerText = "TRIGGERED";
+                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                        } else if (data.macro.us10y >= 1.80) {
+                            yieldInv.innerText = "NEAR";
+                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                        } else {
+                            yieldInv.innerText = "FAR";
+                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
                         }
 
-                        if (data.session) {
-                            document.getElementById('session-display-name').innerText = data.session.name;
-                            document.getElementById('session-desc').innerText = data.session.desc || "Tracking flow...";
-                            document.getElementById('session-vol-badge').innerText = `${data.session.vol} VOL`;
-                        }
-
-                        if (data.radar_data && data.radar_data.length === 8) {
-                            synthesisChart.data.datasets[0].data = data.radar_data;
-                            synthesisChart.update();
-                        }
-
-                        // RESTORED: INTELLIGENCE NEWS FEED DATA BINDING
-                        if (data.news && data.news.length > 0) {
-                            document.getElementById('news-count').innerText = `${data.news.length} ITEMS`;
-                            const newsHtml = data.news.map(article => `
-                                <div class="flex items-center justify-between hover:bg-slate-800/40 p-1.5 rounded transition-colors border border-transparent hover:border-slate-800">
-                                    <div class="flex-1 pr-3 truncate">
-                                        <p class="text-xs text-slate-300 truncate">${article.title}</p>
-                                        <p class="text-[9px] text-slate-600 uppercase mt-0.5">${article.source}</p>
-                                    </div>
-                                    <span class="text-[9px] font-bold px-1.5 py-0.5 rounded border ${article.impact === 'HIGH' ? 'border-red-500/30 text-red-400 bg-red-500/10' : 'border-slate-700 text-slate-400 bg-slate-900'} uppercase">
-                                        ${article.impact}
-                                    </span>
-                                </div>
-                            `).join('');
-                            document.getElementById('news-container').innerHTML = newsHtml;
+                        const dxyInv = document.getElementById('invalidation-dxy-status');
+                        if (data.macro.dxy >= 108.50) {
+                            dxyInv.innerText = "TRIGGERED";
+                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                        } else if (data.macro.dxy >= 106.00) {
+                            dxyInv.innerText = "NEAR";
+                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                        } else {
+                            dxyInv.innerText = "FAR";
+                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
                         }
                     }
-                })
-                .catch(err => console.error("API Fetch Error:", err));
+
+                    if (data.multi_flow) {
+                        updateExecutionLayer(data.multi_flow.h4.bull, data.multi_flow.fast.bull);
+                    } else {
+                        updateExecutionLayer(data.bull_flow || 50, data.bull_flow || 50);
+                    }
+
+                    const supportVal = data.bull_flow;
+                    const opposeVal = data.bear_flow;
+                    document.getElementById('support-pct').innerText = `${supportVal.toFixed(1)}%`;
+                    document.getElementById('oppose-pct').innerText = `${opposeVal.toFixed(1)}%`;
+                    document.getElementById('support-bar').style.width = `${supportVal}%`;
+                    document.getElementById('oppose-bar').style.width = `${opposeVal}%`;
+
+                    document.getElementById('radar-support').innerText = `${supportVal.toFixed(1)}%`;
+                    document.getElementById('radar-oppose').innerText = `${opposeVal.toFixed(1)}%`;
+                    
+                    const netEdgeVal = (supportVal - opposeVal).toFixed(1);
+                    const netEdgeEl = document.getElementById('radar-net-edge');
+                    netEdgeEl.innerText = (netEdgeVal > 0 ? `+${netEdgeVal}` : netEdgeVal);
+                    netEdgeEl.className = netEdgeVal >= 0 ? "text-emerald-400 font-bold text-xs" : "text-red-400 font-bold text-xs";
+
+                    if (data.posture) {
+                        const score = data.posture.score;
+                        document.getElementById('top-score').innerText = score;
+                        document.getElementById('regime-score-val').innerText = score;
+                        document.getElementById('center-radar-score').innerText = score;
+
+                        const bias = data.posture.bias;
+                        document.getElementById('regime-score-label').innerText = bias;
+
+                        document.getElementById('narrative-title').innerText = data.posture.action;
+                        document.getElementById('narrative-desc').innerText = data.posture.narrative;
+                        document.getElementById('posture-headline').innerText = data.posture.action;
+                        
+                        if (data.posture.color) {
+                            document.getElementById('narrative-title').className = `text-base md:text-lg font-bold tracking-tight mb-1 transition-colors ${data.posture.color}`;
+                        }
+                        
+                        const ls = data.posture.ladder_state || "OBSERVE";
+                        ['observe', 'prepare', 'act', 'manage'].forEach(l => {
+                            document.getElementById(`ladder-${l}`).className = "py-1 rounded bg-slate-950 text-slate-600 border border-slate-800/50";
+                        });
+                        if (ls === "PREPARE") document.getElementById('ladder-prepare').className = "py-1 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40 font-bold glow-gold";
+                        else if (ls === "ACT") document.getElementById('ladder-act').className = "py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold glow-green";
+                        else if (ls === "MANAGE") document.getElementById('ladder-manage').className = "py-1 rounded bg-red-500/20 text-red-400 border border-red-500/40 font-bold glow-red";
+                        else document.getElementById('ladder-observe').className = "py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold";
+                    }
+
+                    if (data.session) {
+                        document.getElementById('session-display-name').innerText = data.session.name;
+                        document.getElementById('session-desc').innerText = data.session.desc || "Tracking flow...";
+                        document.getElementById('session-vol-badge').innerText = `${data.session.vol} VOL`;
+                    }
+
+                    if (data.radar_data && data.radar_data.length === 8) {
+                        synthesisChart.data.datasets[0].data = data.radar_data;
+                        synthesisChart.update();
+                    }
+
+                    if (data.news && data.news.length > 0) {
+                        document.getElementById('news-count').innerText = `${data.news.length} ITEMS`;
+                        const newsHtml = data.news.map(article => `
+                            <div class="flex items-center justify-between hover:bg-slate-800/40 p-1.5 rounded transition-colors border border-transparent hover:border-slate-800">
+                                <div class="flex-1 pr-3 truncate">
+                                    <p class="text-xs text-slate-300 truncate">${article.title}</p>
+                                    <p class="text-[9px] text-slate-600 uppercase mt-0.5">${article.source}</p>
+                                </div>
+                                <span class="text-[9px] font-bold px-1.5 py-0.5 rounded border ${article.impact === 'HIGH' ? 'border-red-500/30 text-red-400 bg-red-500/10' : 'border-slate-700 text-slate-400 bg-slate-900'} uppercase">
+                                    ${article.impact}
+                                </span>
+                            </div>
+                        `).join('');
+                        document.getElementById('news-container').innerHTML = newsHtml;
+                    }
+                }
+            } catch (err) {
+                console.error("API Fetch Error:", err);
+            }
         }
 
         fetchGoldData();
-        setInterval(fetchGoldData, 5000);
+        
     </script>
 </body>
 </html>
