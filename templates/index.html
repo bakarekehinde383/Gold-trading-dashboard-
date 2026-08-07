@@ -1,3 +1,4 @@
+       
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,6 +7,7 @@
     <title>KFX Gold Intelligence Tool</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://checkout.flutterwave.com/v3.js"></script>
     <style>
         body {
             background-color: #030712;
@@ -109,7 +111,7 @@
                 <div class="flex justify-between items-center border-b border-slate-800/80 pb-2 mb-3">
                     <span class="text-blue-400 font-bold text-[10px] tracking-widest uppercase">• MACRO DOMINANCE</span>
                 </div>
-                
+
                 <div class="mb-4">
                     <div class="flex justify-between text-[10px] mb-1">
                         <span id="macro-bias-label" class="text-slate-400 uppercase font-bold">NEUTRAL EDGE</span>
@@ -381,18 +383,21 @@
             });
         }
 
+        let rawPriceConfig = 150000;
+
         // --- FETCH DYNAMIC SUBSCRIPTION PRICE ---
         async function fetchConfig() {
             try {
                 const response = await fetch('/api/config');
                 const data = await response.json();
-                
-                // Formats "15000" into "15,000"
-                const formattedPrice = Number(data.price).toLocaleString();
+                if (data.price) {
+                    rawPriceConfig = Number(data.price);
+                }
+                const formattedPrice = rawPriceConfig.toLocaleString();
                 document.getElementById('pay-btn').innerText = `Subscribe (₦${formattedPrice})`;
             } catch (err) {
                 console.error("Failed to load price config", err);
-                document.getElementById('pay-btn').innerText = `Subscribe Now`; // Fallback
+                document.getElementById('pay-btn').innerText = `Subscribe Now`;
             }
         }
         fetchConfig();
@@ -424,6 +429,35 @@
             const email = localStorage.getItem('kfx_user_email');
             if (!email) return;
 
+            // Direct Inline Popup Option using your Live Public Key
+            if (typeof FlutterwaveCheckout === 'function') {
+                FlutterwaveCheckout({
+                    public_key: "FLWPUBK-80897590e75ba14810bf06d3857db9f3-X",
+                    tx_ref: "KFX-" + Math.floor((Math.random() * 1000000000) + 1),
+                    amount: rawPriceConfig,
+                    currency: "NGN",
+                    payment_options: "card, banktransfer, ussd",
+                    customer: {
+                        email: email,
+                        name: "KFX Client",
+                    },
+                    customizations: {
+                        title: "KFX Gold Intelligence Tool",
+                        description: "Premium Access Subscription",
+                    },
+                    callback: function (data) {
+                        if (data.status === "successful") {
+                            window.location.href = "/verify-payment?transaction_id=" + data.transaction_id + "&email=" + encodeURIComponent(email);
+                        }
+                    },
+                    onclose: function() {
+                        resetModal();
+                    }
+                });
+                return;
+            }
+
+            // Fallback backend redirect
             document.getElementById('pay-btn').classList.add('hidden');
             document.getElementById('pay-loading').classList.remove('hidden');
 
@@ -618,4 +652,4 @@
     </script>
 </body>
 </html>
-
+                         
