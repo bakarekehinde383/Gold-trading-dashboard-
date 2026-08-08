@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KFX Global | Authentication Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #030712;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+            background-size: 24px 24px;
+        }
+        .glow-gold { box-shadow: 0 0 20px rgba(234, 179, 8, 0.15); }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen font-mono text-slate-300 selection:bg-yellow-900 selection:text-white">
+
+    <div class="bg-slate-900/80 backdrop-blur-md border border-slate-700/80 p-10 rounded-xl w-full max-w-md shadow-2xl glow-gold text-center relative overflow-hidden">
+        
+        <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-600 via-yellow-400 to-yellow-600"></div>
+
+        <div class="mb-8">
+            <div class="inline-flex items-center justify-center w-12 h-12 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 font-bold text-xl mb-4">
+                KFX
+            </div>
+            <h1 class="text-3xl font-bold text-white tracking-widest uppercase mb-1">KFX Global</h1>
+            <p class="text-xs text-slate-500 tracking-[0.2em] uppercase">Intelligence Terminal Access</p>
+        </div>
+
+        <div id="login-section" class="space-y-5">
+            <div class="text-left">
+                <label class="block text-[10px] uppercase tracking-widest text-slate-500 mb-2">Authentication Email</label>
+                <input type="email" id="email-input" placeholder="client@domain.com" 
+                       class="w-full bg-slate-950 border border-slate-700 rounded p-3 text-white text-sm focus:outline-none focus:border-yellow-500 transition-colors">
+            </div>
+            
+            <button onclick="verifyAccess()" id="login-btn"
+                    class="w-full bg-yellow-600 hover:bg-yellow-500 text-slate-950 font-bold uppercase tracking-wider py-3 rounded transition-colors text-sm">
+                Enter Portal
+            </button>
+            <p id="login-error" class="text-red-400 text-xs hidden mt-2"></p>
+        </div>
+
+        <div id="payment-section" class="space-y-5 hidden">
+            <div class="bg-slate-950 border border-slate-800 rounded p-4 mb-2">
+                <p class="text-yellow-500 font-bold text-sm mb-1">Access Denied</p>
+                <p class="text-xs text-slate-400 leading-relaxed">No active subscription found for this email. Please subscribe to unlock the Intelligence Terminal.</p>
+            </div>
+
+            <button onclick="initiatePayment()" id="pay-btn"
+                    class="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-wider py-3 rounded transition-colors text-sm shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                Subscribe & Unlock
+            </button>
+            
+            <p id="pay-loading" class="text-yellow-500 text-xs font-bold animate-pulse hidden">
+                Establishing secure connection to Flutterwave...
+            </p>
+
+            <button onclick="resetPortal()" class="text-slate-500 hover:text-slate-300 text-xs mt-4 underline decoration-slate-700 underline-offset-4">
+                Use a different email address
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        async function verifyAccess() {
+            const email = document.getElementById('email-input').value.trim();
+            const btn = document.getElementById('login-btn');
+            const errorMsg = document.getElementById('login-error');
+            
+            if(!email) {
+                errorMsg.innerText = "Please enter a valid email address.";
+                errorMsg.classList.remove('hidden');
+                return;
+            }
+
+            errorMsg.classList.add('hidden');
+            btn.innerText = "VERIFYING CREDENTIALS...";
+            btn.disabled = true;
+
+            try {
+                // Check if they have access by pinging your gold API
+                const apiUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' 
+                    ? 'http://127.0.0.1:10000/api/gold' 
+                    : '/api/gold';
+
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: { 'Authorization': email }
+                });
+
+                if (response.status === 200) {
+                    // Success! They are authorized or an admin.
+                    localStorage.setItem('kfx_email', email);
+                    btn.innerText = "ACCESS GRANTED. REDIRECTING...";
+                    btn.classList.replace('bg-yellow-600', 'bg-emerald-600');
+                    setTimeout(() => { window.location.href = '/dashboard'; }, 800);
+                } else if (response.status === 401 || response.status === 403) {
+                    // Not authorized. Prompt payment.
+                    localStorage.setItem('kfx_email', email);
+                    document.getElementById('login-section').classList.add('hidden');
+                    document.getElementById('payment-section').classList.remove('hidden');
+                } else {
+                    throw new Error("Server error");
+                }
+            } catch (err) {
+                console.error(err);
+                errorMsg.innerText = "System error verifying access. Try again.";
+                errorMsg.classList.remove('hidden');
+                btn.innerText = "ENTER PORTAL";
+                btn.disabled = false;
+            }
+        }
+
+        async function initiatePayment() {
+            const email = localStorage.getItem('kfx_email');
+            const btn = document.getElementById('pay-btn');
+            const loading = document.getElementById('pay-loading');
+            
+            btn.classList.add('hidden');
+            loading.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/api/pay', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === "success") {
+                    if (data.is_admin) {
+                        window.location.href = '/dashboard';
+                    } else if (data.checkout_url) {
+                        window.location.href = data.checkout_url;
+                    }
+                } else {
+                    alert("Gateway Error: " + data.message);
+                    btn.classList.remove('hidden');
+                    loading.classList.add('hidden');
+                }
+            } catch (err) {
+                alert("Could not connect to payment gateway.");
+                btn.classList.remove('hidden');
+                loading.classList.add('hidden');
+            }
+        }
+
+        function resetPortal() {
+            document.getElementById('payment-section').classList.add('hidden');
+            document.getElementById('login-section').classList.remove('hidden');
+            const btn = document.getElementById('login-btn');
+            btn.innerText = "ENTER PORTAL";
+            btn.disabled = false;
+        }
+    </script>
+</body>
+</html>
+```
+
+---
+
+### Step 2: Make a tiny edit to your `index.html` (The Dashboard)
+
+Since your new portal handles all the login and payment popups, we no longer want the dashboard (`index.html`) popping up its own built-in modal when someone tries to sneak in. If someone goes directly to `/dashboard` without paying, we just want to kick them back to the front door (`/`).
+
+Open your `index.html` file, scroll all the way down to your JavaScript `fetchGoldData()` function, and find these exact two spots:
+
+**Spot 1:** (Around line 273)
+```javascript
+            // If no email is saved, show the login gate immediately.
+            if (!email) {
+                document.getElementById('auth-modal').classList.remove('hidden');
+                if (fetchInterval) clearInterval(fetchInterval);
+                fetchInterval = null;
+                return;
+            }
+```
+**Change it to:**
+```javascript
+            // If no email is saved, kick them to the login page.
+            if (!email) {
+                window.location.href = '/';
+                return;
+            }
+```
+
+**Spot 2:** (Around line 286)
+```javascript
+                if (response.status === 401 || response.status === 403) {
+                    document.getElementById('auth-modal').classList.remove('hidden');
+                    document.getElementById('login-form').classList.add('hidden');
+                    document.getElementById('payment-form').classList.remove('hidden');
+                    document.getElementById('modal-title').innerText = "Subscription Required";
+                    document.getElementById('modal-message').innerText = "Your account is not active. Please subscribe via Flutterwave to continue.";
+                    
+                    if (fetchInterval) clearInterval(fetchInterval);
+                    fetchInterval = null;
+                    return;
+                }
+```
+**Change it to:**
+```javascript
+                if (response.status === 401 || response.status === 403) {
+                    // Subscription expired or invalid, kick them to the login page
+                    localStorage.removeItem('kfx_email');
+                    window.location.href = '/';
+                    return;
+                }
+
