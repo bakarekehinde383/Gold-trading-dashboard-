@@ -77,8 +77,35 @@
         </p>
     </div>
 
+    <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4 mb-4">
+        <div class="flex justify-between items-center mb-3">
+            <span class="text-blue-400 font-bold text-[10px] tracking-widest uppercase">• XAUUSD INSTITUTIONAL CHARTING</span>
+            <div id="technical-summary" class="flex gap-2">
+                <span class="text-xs text-slate-500 animate-pulse">Scanning technicals...</span>
+            </div>
+        </div>
+        <div class="tradingview-widget-container" style="height: 450px; width: 100%;">
+            <div id="tradingview_xauusd" style="height: 100%; width: 100%;"></div>
+            <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
+            <script type="text/javascript">
+                new TradingView.widget({
+                    "autosize": true,
+                    "symbol": "OANDA:XAUUSD",
+                    "interval": "15",
+                    "timezone": "Etc/UTC",
+                    "theme": "dark",
+                    "style": "1",
+                    "locale": "en",
+                    "toolbar_bg": "#f1f3f6",
+                    "enable_publishing": false,
+                    "allow_symbol_change": true,
+                    "container_id": "tradingview_xauusd"
+                });
+            </script>
+        </div>
+    </div>
+
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-4">
-        
         <div class="space-y-4">
             <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4">
                 <div class="flex justify-between items-center mb-2">
@@ -89,7 +116,6 @@
                     <span class="text-slate-500 text-sm">/100</span>
                 </div>
                 <div id="regime-score-label" class="text-yellow-500 font-bold text-xs uppercase mb-4">NEUTRAL</div>
-
                 <div class="space-y-2 text-[10px]">
                     <div class="flex justify-between">
                         <span class="text-slate-400">SUPPORTING GOLD</span>
@@ -110,7 +136,6 @@
                 <div class="flex justify-between items-center border-b border-slate-800/80 pb-2 mb-3">
                     <span class="text-blue-400 font-bold text-[10px] tracking-widest uppercase">• MACRO DOMINANCE</span>
                 </div>
-
                 <div class="mb-4">
                     <div class="flex justify-between text-[10px] mb-1">
                         <span id="macro-bias-label" class="text-slate-400 uppercase font-bold">NEUTRAL EDGE</span>
@@ -121,7 +146,6 @@
                         <div id="macro-bear-bar" class="bg-red-500 h-full" style="width: 50%"></div>
                     </div>
                 </div>
-
                 <div class="space-y-2 text-[10px]">
                     <div class="flex justify-between items-center">
                         <span class="text-slate-500">REAL YIELD (US10Y)</span>
@@ -139,7 +163,6 @@
             <div class="flex justify-between items-center mb-2">
                 <span class="text-slate-400 font-bold text-[10px] tracking-widest uppercase">• GOLD PRESSURE RADAR — LIVE</span>
             </div>
-
             <div class="relative w-full flex justify-center items-center my-2 min-h-[260px]">
                 <div class="w-full max-w-[320px]">
                     <canvas id="synthesisRadar"></canvas>
@@ -148,7 +171,6 @@
                     <span id="center-radar-score" class="text-white font-bold text-2xl tracking-tighter drop-shadow-md">50</span>
                 </div>
             </div>
-
             <div class="grid grid-cols-4 gap-2 border-t border-slate-800/80 pt-3 text-center">
                 <div class="border-r border-slate-800/80 pr-2">
                     <span class="text-[9px] text-slate-500 uppercase block">SUPPORT</span>
@@ -188,7 +210,6 @@
                     <span class="text-yellow-500 font-bold text-[10px] tracking-widest uppercase">• KILLZONE TIMING</span>
                     <span id="killzone-countdown" class="text-[9px] text-slate-400">Calculating...</span>
                 </div>
-                
                 <div class="flex justify-between items-center border border-slate-800/80 bg-slate-950/60 p-2 rounded">
                     <div>
                         <span class="text-white font-bold block text-xs" id="session-display-name">SESSION SEARCH</span>
@@ -204,7 +225,6 @@
 
     <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4 mb-4">
         <span class="text-slate-400 font-bold text-[10px] tracking-widest uppercase block mb-4 border-b border-slate-800/80 pb-2">• INTRADAY TIMING · EXECUTION LAYER</span>
-        
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
                 <div class="flex justify-between text-[10px] mb-1">
@@ -254,7 +274,6 @@
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        
         <div class="border border-slate-800 bg-slate-900/40 rounded-md p-4">
             <div class="flex justify-between items-center border-b border-slate-800/80 pb-2 mb-3">
                 <span class="text-orange-500 font-bold text-[10px] tracking-widest uppercase">• INTELLIGENCE FEED · ECONOMIC CALENDAR</span>
@@ -293,11 +312,9 @@
                 </div>
             </div>
         </div>
-
     </div>
 
-                
-         <script>
+    <script>
         // LIVE GMT CLOCK
         function updateClock() {
             const now = new Date();
@@ -356,7 +373,6 @@
 
         function updateExecutionLayer(h4Bull, fastBull) {
             const h2Bull = (h4Bull + fastBull) / 2;
-            
             const frames = [
                 { bull: h4Bull, prefix: 'exec-4h' },
                 { bull: h2Bull, prefix: 'exec-2h' },
@@ -386,10 +402,8 @@
         let fetchInterval;
 
         async function fetchGoldData() {
-            // Retrieves the email saved by your new login portal
             const userEmail = localStorage.getItem('kfx_email');
             
-            // SECURITY CHECK 1: If no email is saved, boot them to the KFX Global login page
             if (!userEmail) {
                 window.location.href = '/';
                 return;
@@ -397,12 +411,9 @@
 
             try {
                 const response = await fetch('/api/gold', {
-                    headers: {
-                        'Authorization': userEmail
-                    }
+                    headers: { 'Authorization': userEmail }
                 });
 
-                // SECURITY CHECK 2: If the backend says they haven't paid, boot them back to the portal
                 if (response.status === 401 || response.status === 403) {
                     localStorage.removeItem('kfx_email');
                     window.location.href = '/';
@@ -414,54 +425,68 @@
                 if (data.bid > 0) {
                     document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
                     
-                    if (data.macro) {
-                        document.getElementById('macro-us10y').innerText = `${data.macro.us10y.toFixed(3)}%`;
-                        document.getElementById('macro-dxy').innerText = data.macro.dxy.toFixed(2);
-                        
-                        const macroEdge = (50 - ((data.macro.us10y - 1.5) * 20) - ((data.macro.dxy - 100) * 2));
-                        const clampedEdge = Math.max(-50, Math.min(50, macroEdge));
-                        
-                        document.getElementById('macro-edge-val').innerText = `${clampedEdge > 0 ? '+' : ''}${clampedEdge.toFixed(1)} EDGE`;
-                        
-                        const biasLabel = document.getElementById('macro-bias-label');
-                        if (clampedEdge > 10) {
-                            biasLabel.innerText = "LEANING BULLISH";
-                            biasLabel.className = "text-emerald-400 uppercase font-bold text-[10px]";
-                        } else if (clampedEdge < -10) {
-                            biasLabel.innerText = "LEANING BEARISH";
-                            biasLabel.className = "text-red-400 uppercase font-bold text-[10px]";
-                        } else {
-                            biasLabel.innerText = "NEUTRAL EDGE";
-                            biasLabel.className = "text-slate-400 uppercase font-bold text-[10px]";
-                        }
+                    // NEW PHASE 1: Display Technical Engine Data above the Chart
+                    if (data.technicals) {
+                        const techHtml = `
+                            <span class="text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">RSI (14): ${data.technicals.rsi}</span>
+                            <span class="text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">EMA 50: $${data.technicals.ema50}</span>
+                            <span class="text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">EMA 200: $${data.technicals.ema200}</span>
+                            <span class="text-[9px] font-bold px-1.5 py-0.5 rounded border ${data.technicals.bias === 'BULLISH' ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10' : data.technicals.bias === 'BEARISH' ? 'border-red-500/30 text-red-400 bg-red-500/10' : 'border-slate-700 text-slate-400 bg-slate-900'} uppercase">BIAS: ${data.technicals.bias}</span>
+                        `;
+                        document.getElementById('technical-summary').innerHTML = techHtml;
+                    }
 
-                        const normalizedBull = 50 + clampedEdge;
-                        document.getElementById('macro-bull-bar').style.width = `${normalizedBull}%`;
-                        document.getElementById('macro-bear-bar').style.width = `${100 - normalizedBull}%`;
+                    // NEW PHASE 1: Prioritize updated root DXY & TNX from backend
+                    const currentDxy = data.dxy !== undefined ? data.dxy : (data.macro ? data.macro.dxy : 0);
+                    const currentUs10y = data.tnx !== undefined ? data.tnx : (data.macro ? data.macro.us10y : 0);
 
-                        const yieldInv = document.getElementById('invalidation-yield-status');
-                        if (data.macro.us10y >= 2.00) {
-                            yieldInv.innerText = "TRIGGERED";
-                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
-                        } else if (data.macro.us10y >= 1.80) {
-                            yieldInv.innerText = "NEAR";
-                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
-                        } else {
-                            yieldInv.innerText = "FAR";
-                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
-                        }
-                        
-                        const dxyInv = document.getElementById('invalidation-dxy-status');
-                        if (data.macro.dxy >= 108.50) {
-                            dxyInv.innerText = "TRIGGERED";
-                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
-                        } else if (data.macro.dxy >= 106.00) {
-                            dxyInv.innerText = "NEAR";
-                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
-                        } else {
-                            dxyInv.innerText = "FAR";
-                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
-                        }
+                    document.getElementById('macro-us10y').innerText = `${currentUs10y.toFixed(3)}%`;
+                    document.getElementById('macro-dxy').innerText = currentDxy.toFixed(2);
+                    
+                    const macroEdge = (50 - ((currentUs10y - 1.5) * 20) - ((currentDxy - 100) * 2));
+                    const clampedEdge = Math.max(-50, Math.min(50, macroEdge));
+                    
+                    document.getElementById('macro-edge-val').innerText = `${clampedEdge > 0 ? '+' : ''}${clampedEdge.toFixed(1)} EDGE`;
+                    
+                    const biasLabel = document.getElementById('macro-bias-label');
+                    if (clampedEdge > 10) {
+                        biasLabel.innerText = "LEANING BULLISH";
+                        biasLabel.className = "text-emerald-400 uppercase font-bold text-[10px]";
+                    } else if (clampedEdge < -10) {
+                        biasLabel.innerText = "LEANING BEARISH";
+                        biasLabel.className = "text-red-400 uppercase font-bold text-[10px]";
+                    } else {
+                        biasLabel.innerText = "NEUTRAL EDGE";
+                        biasLabel.className = "text-slate-400 uppercase font-bold text-[10px]";
+                    }
+
+                    const normalizedBull = 50 + clampedEdge;
+                    document.getElementById('macro-bull-bar').style.width = `${normalizedBull}%`;
+                    document.getElementById('macro-bear-bar').style.width = `${100 - normalizedBull}%`;
+
+                    // Update Invalidation Status
+                    const yieldInv = document.getElementById('invalidation-yield-status');
+                    if (currentUs10y >= 2.00) {
+                        yieldInv.innerText = "TRIGGERED";
+                        yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                    } else if (currentUs10y >= 1.80) {
+                        yieldInv.innerText = "NEAR";
+                        yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                    } else {
+                        yieldInv.innerText = "FAR";
+                        yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
+                    }
+                    
+                    const dxyInv = document.getElementById('invalidation-dxy-status');
+                    if (currentDxy >= 108.50) {
+                        dxyInv.innerText = "TRIGGERED";
+                        dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                    } else if (currentDxy >= 106.00) {
+                        dxyInv.innerText = "NEAR";
+                        dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                    } else {
+                        dxyInv.innerText = "FAR";
+                        dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
                     }
 
                     if (data.multi_flow) {
@@ -544,10 +569,12 @@
             }
         }
 
-        // Initialize the first fetch, then loop every 5 seconds to keep data live
         fetchGoldData();
         if (!fetchInterval) fetchInterval = setInterval(fetchGoldData, 5000); 
         
     </script>
+</body>
+</html>
+
 
 
