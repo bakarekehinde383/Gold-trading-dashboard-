@@ -1,4 +1,3 @@
-       
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -297,56 +296,7 @@
 
     </div>
 
-    <script>
-        // LIVE GMT CLOCK
-        function updateClock() {
-            const now = new Date();
-            const hours = String(now.getUTCHours()).padStart(2, '0');
-            const minutes = String(now.getUTCMinutes()).padStart(2, '0');
-            const seconds = String(now.getUTCSeconds()).padStart(2, '0');
-            document.getElementById('gmt-clock').innerText = `${hours}:${minutes}:${seconds} GMT`;
-
-            const h = now.getUTCHours();
-            let countdown = "";
-            if (h >= 13 && h < 21) {
-                const remHours = 20 - h;
-                const remMins = 59 - now.getUTCMinutes();
-                countdown = `NY CLOSES IN ${remHours}H ${remMins}M`;
-            } else if (h >= 8 && h < 16) {
-                const remHours = 15 - h;
-                const remMins = 59 - now.getUTCMinutes();
-                countdown = `LONDON CLOSES IN ${remHours}H ${remMins}M`;
-            } else {
-                countdown = `AWAITING NEXT OPEN`;
-            }
-            document.getElementById('killzone-countdown').innerText = countdown;
-        }
-        setInterval(updateClock, 1000);
-        updateClock();
-
-        // CHART INIT
-        const ctx = document.getElementById('synthesisRadar').getContext('2d');
-        const synthesisChart = new Chart(ctx, {
-            type: 'radar',
-            data: {
-                labels: ['REAL YLD', '10Y/2Y', 'VIX', 'DXY', 'INTRA 4H', 'FAST TAPE', '1H RANGE', 'MACRO EDGE'],
-                datasets: [{
-                    data: [50, 50, 50, 50, 50, 50, 50, 50],
-                    backgroundColor: 'rgba(234, 179, 8, 0.12)', 
-                    borderColor: 'rgba(234, 179, 8, 0.8)',
-                    pointBackgroundColor: '#ffffff',
-                    borderWidth: 1.5,
-                    pointRadius: 2
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    r: {
-                        angleLines: { color: 'rgba(255, 255, 255, 0.08)' },
-                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                        pointLabels: { color: '#94a3b8', font: { family: 'monospace', size: 8 } },
+    pointLabels: { color: '#94a3b8', font: { family: 'monospace', size: 8 } },
                         ticks: { display: false, min: 0, max: 100 }
                     }
                 },
@@ -612,6 +562,219 @@
                         if (ls === "PREPARE") document.getElementById('ladder-prepare').className = "py-1 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40 font-bold glow-gold";
                         else if (ls === "ACT") document.getElementById('ladder-act').className = "py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold glow-green";
                         else if (ls === "MANAGE") document.getElementById('ladder-manage').className = "py-1 rounded bg-red-500/20 text-red-400 border border-red-500/40 font-bold glow-red";
+
+    <script>
+        // LIVE GMT CLOCK
+        function updateClock() {
+            const now = new Date();
+            const hours = String(now.getUTCHours()).padStart(2, '0');
+            const minutes = String(now.getUTCMinutes()).padStart(2, '0');
+            const seconds = String(now.getUTCSeconds()).padStart(2, '0');
+            document.getElementById('gmt-clock').innerText = `${hours}:${minutes}:${seconds} GMT`;
+
+            const h = now.getUTCHours();
+            let countdown = "";
+            if (h >= 13 && h < 21) {
+                const remHours = 20 - h;
+                const remMins = 59 - now.getUTCMinutes();
+                countdown = `NY CLOSES IN ${remHours}H ${remMins}M`;
+            } else if (h >= 8 && h < 16) {
+                const remHours = 15 - h;
+                const remMins = 59 - now.getUTCMinutes();
+                countdown = `LONDON CLOSES IN ${remHours}H ${remMins}M`;
+            } else {
+                countdown = `AWAITING NEXT OPEN`;
+            }
+            document.getElementById('killzone-countdown').innerText = countdown;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // CHART INIT
+        const ctx = document.getElementById('synthesisRadar').getContext('2d');
+        const synthesisChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['REAL YLD', '10Y/2Y', 'VIX', 'DXY', 'INTRA 4H', 'FAST TAPE', '1H RANGE', 'MACRO EDGE'],
+                datasets: [{
+                    data: [50, 50, 50, 50, 50, 50, 50, 50],
+                    backgroundColor: 'rgba(234, 179, 8, 0.12)', 
+                    borderColor: 'rgba(234, 179, 8, 0.8)',
+                    pointBackgroundColor: '#ffffff',
+                    borderWidth: 1.5,
+                    pointRadius: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        angleLines: { color: 'rgba(255, 255, 255, 0.08)' },
+                        grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                        pointLabels: { color: '#94a3b8', font: { family: 'monospace', size: 8 } },
+                        ticks: { display: false, min: 0, max: 100 }
+                    }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        function updateExecutionLayer(h4Bull, fastBull) {
+            const h2Bull = (h4Bull + fastBull) / 2;
+            
+            const frames = [
+                { bull: h4Bull, prefix: 'exec-4h' },
+                { bull: h2Bull, prefix: 'exec-2h' },
+                { bull: fastBull, prefix: 'exec-15m' }
+            ];
+
+            frames.forEach(frame => {
+                const bear = 100 - frame.bull;
+                document.getElementById(`${frame.prefix}-bull`).innerText = `${frame.bull.toFixed(1)}%`;
+                document.getElementById(`${frame.prefix}-bear`).innerText = `${bear.toFixed(1)}%`;
+                document.getElementById(`${frame.prefix}-bar`).style.width = `${frame.bull}%`;
+
+                const labelEl = document.getElementById(`${frame.prefix}-label`);
+                if (frame.bull >= 55) {
+                    labelEl.innerText = "TIMING - BULLISH";
+                    labelEl.className = "text-[9px] border border-emerald-500/40 text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded uppercase font-bold";
+                } else if (frame.bull <= 45) {
+                    labelEl.innerText = "TIMING - BEARISH";
+                    labelEl.className = "text-[9px] border border-red-500/40 text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded uppercase font-bold";
+                } else {
+                    labelEl.innerText = "MIXED";
+                    labelEl.className = "text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold";
+                }
+            });
+        }
+
+        let fetchInterval;
+
+        async function fetchGoldData() {
+            // Retrieves the email saved by your new login portal
+            const userEmail = localStorage.getItem('kfx_email');
+            
+            // SECURITY CHECK 1: If no email is saved, boot them to the KFX Global login page
+            if (!userEmail) {
+                window.location.href = '/';
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/gold', {
+                    headers: {
+                        'Authorization': userEmail
+                    }
+                });
+
+                // SECURITY CHECK 2: If the backend says they haven't paid, boot them back to the portal
+                if (response.status === 401 || response.status === 403) {
+                    localStorage.removeItem('kfx_email');
+                    window.location.href = '/';
+                    return;
+                }
+
+                const data = await response.json();
+                
+                if (data.bid > 0) {
+                    document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
+                    
+                    if (data.macro) {
+                        document.getElementById('macro-us10y').innerText = `${data.macro.us10y.toFixed(3)}%`;
+                        document.getElementById('macro-dxy').innerText = data.macro.dxy.toFixed(2);
+                        
+                        const macroEdge = (50 - ((data.macro.us10y - 1.5) * 20) - ((data.macro.dxy - 100) * 2));
+                        const clampedEdge = Math.max(-50, Math.min(50, macroEdge));
+                        
+                        document.getElementById('macro-edge-val').innerText = `${clampedEdge > 0 ? '+' : ''}${clampedEdge.toFixed(1)} EDGE`;
+                        
+                        const biasLabel = document.getElementById('macro-bias-label');
+                        if (clampedEdge > 10) {
+                            biasLabel.innerText = "LEANING BULLISH";
+                            biasLabel.className = "text-emerald-400 uppercase font-bold text-[10px]";
+                        } else if (clampedEdge < -10) {
+                            biasLabel.innerText = "LEANING BEARISH";
+                            biasLabel.className = "text-red-400 uppercase font-bold text-[10px]";
+                        } else {
+                            biasLabel.innerText = "NEUTRAL EDGE";
+                            biasLabel.className = "text-slate-400 uppercase font-bold text-[10px]";
+                        }
+
+                        const normalizedBull = 50 + clampedEdge;
+                        document.getElementById('macro-bull-bar').style.width = `${normalizedBull}%`;
+                        document.getElementById('macro-bear-bar').style.width = `${100 - normalizedBull}%`;
+
+                        const yieldInv = document.getElementById('invalidation-yield-status');
+                        if (data.macro.us10y >= 2.00) {
+                            yieldInv.innerText = "TRIGGERED";
+                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                        } else if (data.macro.us10y >= 1.80) {
+                            yieldInv.innerText = "NEAR";
+                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                        } else {
+                            yieldInv.innerText = "FAR";
+                            yieldInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
+                        }
+                        
+                        const dxyInv = document.getElementById('invalidation-dxy-status');
+                        if (data.macro.dxy >= 108.50) {
+                            dxyInv.innerText = "TRIGGERED";
+                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-red-500/40 text-red-400 bg-red-500/10 uppercase animate-pulse";
+                        } else if (data.macro.dxy >= 106.00) {
+                            dxyInv.innerText = "NEAR";
+                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-yellow-500/40 text-yellow-400 bg-yellow-500/10 uppercase";
+                        } else {
+                            dxyInv.innerText = "FAR";
+                            dxyInv.className = "text-[9px] font-bold px-2 py-0.5 rounded border border-slate-700 text-slate-400 bg-slate-900 uppercase";
+                        }
+                    }
+
+                    if (data.multi_flow) {
+                        updateExecutionLayer(data.multi_flow.h4.bull, data.multi_flow.fast.bull);
+                    } else {
+                        updateExecutionLayer(data.bull_flow || 50, data.bull_flow || 50);
+                    }
+
+                    const supportVal = data.bull_flow;
+                    const opposeVal = data.bear_flow;
+                    document.getElementById('support-pct').innerText = `${supportVal.toFixed(1)}%`;
+                    document.getElementById('oppose-pct').innerText = `${opposeVal.toFixed(1)}%`;
+                    document.getElementById('support-bar').style.width = `${supportVal}%`;
+                    document.getElementById('oppose-bar').style.width = `${opposeVal}%`;
+
+                    document.getElementById('radar-support').innerText = `${supportVal.toFixed(1)}%`;
+                    document.getElementById('radar-oppose').innerText = `${opposeVal.toFixed(1)}%`;
+                    
+                    const netEdgeVal = (supportVal - opposeVal).toFixed(1);
+                    const netEdgeEl = document.getElementById('radar-net-edge');
+                    netEdgeEl.innerText = (netEdgeVal > 0 ? `+${netEdgeVal}` : netEdgeVal);
+                    netEdgeEl.className = netEdgeVal >= 0 ? "text-emerald-400 font-bold text-xs" : "text-red-400 font-bold text-xs";
+
+                    if (data.posture) {
+                        const score = data.posture.score;
+                        document.getElementById('top-score').innerText = score;
+                        document.getElementById('regime-score-val').innerText = score;
+                        document.getElementById('center-radar-score').innerText = score;
+
+                        const bias = data.posture.bias;
+                        document.getElementById('regime-score-label').innerText = bias;
+
+                        document.getElementById('narrative-title').innerText = data.posture.action;
+                        document.getElementById('narrative-desc').innerText = data.posture.narrative;
+                        document.getElementById('posture-headline').innerText = data.posture.action;
+                        
+                        if (data.posture.color) {
+                            document.getElementById('narrative-title').className = `text-base md:text-lg font-bold tracking-tight mb-1 transition-colors ${data.posture.color}`;
+                        }
+                        
+                        const ls = data.posture.ladder_state || "OBSERVE";
+                        ['observe', 'prepare', 'act', 'manage'].forEach(l => {
+                            document.getElementById(`ladder-${l}`).className = "py-1 rounded bg-slate-950 text-slate-600 border border-slate-800/50";
+                        });
+                        if (ls === "PREPARE") document.getElementById('ladder-prepare').className = "py-1 rounded bg-orange-500/20 text-orange-400 border border-orange-500/40 font-bold glow-gold";
+                        else if (ls === "ACT") document.getElementById('ladder-act').className = "py-1 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold glow-green";
+                        else if (ls === "MANAGE") document.getElementById('ladder-manage').className = "py-1 rounded bg-red-500/20 text-red-400 border border-red-500/40 font-bold glow-red";
                         else document.getElementById('ladder-observe').className = "py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-bold";
                     }
 
@@ -647,9 +810,10 @@
             }
         }
 
+        // Initialize the first fetch, then loop every 5 seconds to keep data live
         fetchGoldData();
+        if (!fetchInterval) fetchInterval = setInterval(fetchGoldData, 5000); 
         
     </script>
-</body>
-</html>
-                         
+
+
