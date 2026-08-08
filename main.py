@@ -478,6 +478,8 @@ def calculate_technicals(df):
         print(f"Technical Engine Error: {e}")
         return {"rsi": 50.0, "ema50": 0.0, "ema200": 0.0, "bias": "NEUTRAL"}
 
+
+
 # ---------------------------------------------------------
 # ROUTE 4: GATED API ENDPOINT (GOLD DATA)
 # ---------------------------------------------------------
@@ -549,35 +551,112 @@ def get_gold_price():
         news = get_news_data()
         session = get_killzone()
 
-        score_yield = get_score(macro['us10y'], 3.0, 5.5, inverse=True)
-        score_curve = get_score(macro['yield_curve'], -1.0, 1.0, inverse=True)
-        score_vix = get_score(macro['vix'], 12.0, 35.0, inverse=False)
-        score_dxy = get_score(macro['dxy'], 98.0, 110.0, inverse=True)
+        # =========================================================
+        # INTRADAY TECHNICALS ENGINE (EMA 50, EMA 200, RSI 14)
+        # =========================================================
+        close_prices = rates_h1['Close']
+        ema_50 = float(close_prices.ewm(span=50, adjust=False).mean().iloc[-1]) if len(close_prices) >= 50 else current_price
+        ema_200 = float(close_prices.ewm(span=200, adjust=False).mean().iloc[-1]) if len(close_prices) >= 200 else current_price
+
+        # Calculate 14-period RSI
+        delta = close_prices.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi_14 = float((100 - (100 / (1 + rs))).iloc[-1]) if not rs.empty else 50.0
+
+        # Technical Alignment Bias
+        if current_price > ema_50 > ema_200:
+            tech_bias = "BULLISH"
+        elif current_price < ema_50 < ema_200:
+            tech_bias = "BEARISH"
+        else:
+            tech_bias = "NEUTRAL"
+
+        # =========================================================
+        # INTRADAY SCORING ENGINE (FAST TAPE WEIGHTED)
+        # =========================================================
+        score = 50
+
+        # 1. Technical Trend Alignment (+/- 12)
+        if tech_bias == "BULLISH":
+            score += 12
+        elif tech_bias == "BEARISH":
+            score -= 12
+
+        # 2. Fast Tape 15M/1H Momentum (Adds up to +/- 20)
+        tape_edge = (fast_bull - 50.0) * 0.40
+        score += tape_edge
+
+        # 3. Macro Soft Filter (+/- 5)
+        us10y_val = macro.get('us10y', 0)
+        dxy_val = macro.get('dxy', 0)
+        if us10y_val < 4.20 and dxy_val < 104.50:
+            score += 5
+        elif us10y_val > 4.50 or dxy_val > 105.50:
+            score -= 5
+
+        # 4. RSI Risk Guardrails (Prevent execution on extreme tops/bottoms)
+        if rsi_14 > 75:
+            score = min(score, 57)  # Prevent BUY when overbought
+        elif rsi_14 < 25:
+            score = max(score, 43)  # Prevent SELL when oversold
+
+        total_score = int(max(0, min(100, round(score))))
+
+        # =========================================================
+        # INTRADAY POSTURE & SIGNAL GENERATION
+        # =========================================================
+        if total_score >= 58:
+            action = "ACT: HEAVY BULLISH FLOW - EXECUTE LONG"
+            ladder = "ACT"
+            color = "text-emerald-400"
+            bias = "BULLISH"
+            narrative = "Intraday tape and technicals align for long execution. Enter on 15m pullback."
+        elif total_score >= 53:
+            action = "PREPARE: BUYERS ACCUMULATING"
+            ladder = "PREPARE"
+            color = "text-orange-400"
+            bias = "LEANING BULLISH"
+            narrative = "Bullish momentum building. Wait for 15m tape confirmation."
+        elif total_score <= 42:
+            action = "ACT: HEAVY BEARISH FLOW - EXECUTE SHORT"
+            ladder = "ACT"
+            color = "text-red-400"
+            bias = "BEARISH"
+            narrative = "Intraday sellers dominate tape. Technicals align for short execution. Sell rallies."
+        elif total_score <= 47:
+            action = "PREPARE: SELLERS ACCUMULATING"
+            ladder = "PREPARE"
+            color = "text-orange-400"
+            bias = "LEANING BEARISH"
+            narrative = "Bearish momentum building. Wait for 15m breakdown."
+        else:
+            action = "OBSERVE: NEUTRAL RANGE"
+            ladder = "OBSERVE"
+            color = "text-slate-400"
+            bias = "NEUTRAL"
+            narrative = "Synthesis score balanced inside session. Stand aside and protect capital."
+
+        posture = {
+            "score": total_score,
+            "bias": bias,
+            "action": action,
+            "narrative": narrative,
+            "ladder_state": ladder,
+            "color": color
+        }
+
+        # 8-Factor Radar Factors
+        score_yield = get_score(us10y_val, 3.0, 5.5, inverse=True)
+        score_curve = get_score(macro.get('yield_curve', 0), -1.0, 1.0, inverse=True)
+        score_vix = get_score(macro.get('vix', 0), 12.0, 35.0, inverse=False)
+        score_dxy = get_score(dxy_val, 98.0, 110.0, inverse=True)
         score_4h = h4_data['bull']
         score_fast = fast_bull
-        
-        # Direction-Aware Volatility Range Fix
         raw_range_score = get_score(price_range_1h, 5.0, 30.0, inverse=False)
-        if fast_bull < 50.0:
-            score_range = 100.0 - raw_range_score
-        else:
-            score_range = raw_range_score
-
+        score_range = (100.0 - raw_range_score) if fast_bull < 50.0 else raw_range_score
         score_macro_edge = (score_yield + score_curve + score_vix + score_dxy) / 4.0
-
-        total_score = int(round(
-            (score_yield + score_curve + score_vix + score_dxy + score_4h + score_fast + score_range + score_macro_edge) / 8.0
-        ))
-
-        posture = generate_action_posture(
-            fast_flow_data,
-            volatility_score,
-            rel_volume,
-            macro,
-            news,
-            total_score,
-            session
-        )
 
         synthesis_8_factors = [
             round(score_yield, 1),
@@ -589,6 +668,36 @@ def get_gold_price():
             round(score_range, 1),
             round(score_macro_edge, 1)
         ]
+
+        # 3. Final Payload Construction
+        return jsonify({
+            "bid": current_price,
+            "dxy": dxy_val,
+            "tnx": us10y_val,
+            "bull_flow": fast_bull,
+            "bear_flow": fast_bear,
+            "multi_flow": {
+                "h4": h4_data,
+                "fast": fast_flow_data
+            },
+            "posture": posture,
+            "macro": macro,
+            "session": session,
+            "radar_data": synthesis_8_factors,
+            "news": news,
+            "technicals": {
+                "rsi": round(rsi_14, 2),
+                "ema50": round(ema_50, 2),
+                "ema200": round(ema_200, 2),
+                "bias": tech_bias
+            }
+        })
+
+    except Exception as e:
+        print(f"Server Error in /api/gold: {e}")
+        return jsonify({"error": "Internal engine calculation error."}), 500
+
+
 
         # --- NEW: FETCH MACRO & RUN TECHNICAL ENGINE ---
         try:
