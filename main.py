@@ -452,7 +452,7 @@ def get_gold_price():
     clean_email = user_email.strip().lower()
 
     # Admin Bypass Check
-    if clean_email == "bakarekehinde383@gmail.com" or (ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower():
+    if clean_email == "bakarekehinde383@gmail.com" or (ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower()):
         pass  # Admin granted full access
     else:
         # Student Subscription Verification
