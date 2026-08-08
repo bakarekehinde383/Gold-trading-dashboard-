@@ -439,6 +439,45 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
     }
 
 
+
+# ==========================================
+# PHASE 1: TECHNICAL & MACRO ENGINE HELPER
+# ==========================================
+def calculate_technicals(df):
+    try:
+        if df is None or len(df) < 50:
+            return {"rsi": 50.0, "ema50": 0.0, "ema200": 0.0, "bias": "NEUTRAL"}
+        
+        # Calculate RSI (14)
+        delta = df['Close'].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs.iloc[-1]))
+        
+        # Calculate EMAs
+        ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
+        ema200 = df['Close'].ewm(span=200, adjust=False).mean().iloc[-1]
+        current_price = df['Close'].iloc[-1]
+        
+        # Determine Advanced Market Bias
+        if current_price > ema50 and ema50 > ema200 and rsi < 70:
+            bias = "BULLISH"
+        elif current_price < ema50 and ema50 < ema200 and rsi > 30:
+            bias = "BEARISH"
+        else:
+            bias = "NEUTRAL"
+            
+        return {
+            "rsi": round(float(rsi), 2),
+            "ema50": round(float(ema50), 2),
+            "ema200": round(float(ema200), 2),
+            "bias": bias
+        }
+    except Exception as e:
+        print(f"Technical Engine Error: {e}")
+        return {"rsi": 50.0, "ema50": 0.0, "ema200": 0.0, "bias": "NEUTRAL"}
+
 # ---------------------------------------------------------
 # ROUTE 4: GATED API ENDPOINT (GOLD DATA)
 # ---------------------------------------------------------
@@ -551,6 +590,21 @@ def get_gold_price():
             round(score_macro_edge, 1)
         ]
 
+        # --- NEW: FETCH MACRO & RUN TECHNICAL ENGINE ---
+        try:
+            # Safely extract DXY and US10Y from your existing macro data
+            dxy_price = round(float(macro.get('dxy', 104.00)), 2)
+            tnx_yield = round(float(macro.get('us10y', 4.250)), 3)
+            
+            # Run Technical Engine on your hourly Gold data
+            tech_data = calculate_technicals(rates_h1) 
+        except Exception as e:
+            print(f"Macro/Tech fetch error: {e}")
+            dxy_price = 104.00
+            tnx_yield = 4.250
+            tech_data = {"rsi": 50.0, "ema50": 0.0, "ema200": 0.0, "bias": "NEUTRAL"}
+        # -----------------------------------------------
+
         return jsonify({
             "symbol": symbol,
             "bid": round(current_price, 2),
@@ -565,7 +619,12 @@ def get_gold_price():
             "macro": macro,
             "news": news,
             "posture": posture,
-            "session": session
+            "session": session,
+            
+            # --- NEW PHASE 1 DATA FIELDS EXPORTED TO FRONTEND ---
+            "dxy": dxy_price,
+            "tnx": tnx_yield,
+            "technicals": tech_data
         })
     except Exception as e:
         print(f"Error in /api/gold: {e}")
@@ -574,7 +633,6 @@ def get_gold_price():
 
 if __name__ == '__main__':
     print("🚀 KFX Gold Intelligence Backend Online!")
-    print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL}")
+    print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL if 'ADMIN_EMAIL' in locals() else 'bakarekehinde383@gmail.com'}")
     app.run(host='0.0.0.0', port=10000)
-
 
