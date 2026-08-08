@@ -22,6 +22,7 @@ db = SQLAlchemy(app)
 ADMIN_EMAIL = "bakarekehinde383@gmail.com"
 
 # --- FLUTTERWAVE CONFIGURATION ---
+# Fetches keys safely from Environment Variables (or falls back to placeholders)
 FLW_SECRET_KEY = os.environ.get("FLW_SECRET_KEY", "FLWSECK_TEST-YOUR_ACTUAL_SECRET_KEY_HERE")
 FLW_SECRET_HASH = os.environ.get("FLW_SECRET_HASH", "KFX_Webhook_Secure_2026")
 
@@ -36,7 +37,7 @@ class Student(db.Model):
 with app.app_context():
     db.create_all()
 
-# Global Caches to throttle external API calls and prevent IP blocking
+# Global Caches to throttle external API calls
 macro_cache = {
     "dxy": 0.00,
     "us10y": 0.00,
@@ -45,18 +46,19 @@ macro_cache = {
     "yield_curve": 0.00,
     "last_updated": 0
 }
+news_cache = {"articles": [], "last_updated": 0}
 
-news_cache = {
-    "articles": [], 
-    "last_updated": 0
-}
-
-gold_cache = {
-    "data": None,
-    "last_updated": 0
-}
-
+# ---------------------------------------------------------
+# ROUTE 0: KFX GLOBAL FRONT DOOR (LOGIN/PAYMENTS)
+# ---------------------------------------------------------
 @app.route('/')
+def serve_landing_page():
+    return render_template('login.html')
+
+# ---------------------------------------------------------
+# ROUTE 0.5: KFX GOLD INTELLIGENCE TOOL (DASHBOARD)
+# ---------------------------------------------------------
+@app.route('/dashboard')
 def serve_dashboard():
     return render_template('index.html')
 
@@ -94,13 +96,16 @@ def initialize_payment():
 
         # --- REGULAR USER FLUTTERWAVE CHECKOUT ---
         tx_ref = f"KFX-GOLD-{uuid.uuid4().hex[:8]}"
+        
+        # Dynamically fetch the price from the server environment
         sub_price = os.environ.get("KFX_SUB_PRICE", "15000")
         
         payload = {
             "tx_ref": tx_ref,
-            "amount": sub_price,
+            "amount": sub_price,  # Dynamic price applied here
             "currency": "NGN",
-            "redirect_url": "https://kfx-gold-intelligence-tool.onrender.com/", 
+            # We updated this redirect URL to point directly to your new dashboard!
+            "redirect_url": "https://kfx-gold-intelligence-tool.onrender.com/dashboard", 
             "customer": {
                 "email": user_email,
                 "name": "KFX Subscriber"
@@ -143,6 +148,7 @@ def flutterwave_webhook():
     """Receives automated payment events directly from Flutterwave servers."""
     signature = request.headers.get("verif-hash")
     
+    # Verify request signature matching your custom secret hash
     if not signature or signature != FLW_SECRET_HASH:
         print("⚠️ Unauthorized Webhook Attempt Blocked!")
         abort(401)
@@ -157,17 +163,22 @@ def flutterwave_webhook():
 
     email_clean = email.strip().lower()
 
+    # Find or register student in database
     student = Student.query.filter_by(email=email_clean).first()
     if not student:
         student = Student(email=email_clean, customer_code=data.get("tx_ref"))
         db.session.add(student)
 
+    # Process automated payment event
     if event_type == "charge.completed" and data.get("status") == "successful":
         student.has_active_sub = True
         print(f"✅ Subscription activated via Flutterwave for: {email_clean}")
 
     db.session.commit()
     return jsonify({"status": "success"}), 200
+
+
+
 
 
 def get_score(value, min_val, max_val, inverse=False):
@@ -184,17 +195,15 @@ def get_macro_data():
     global macro_cache
     current_time = time.time()
    
-    # 60-second cooldown on macro queries
     if current_time - macro_cache["last_updated"] > 60:
         try:
             dxy = yf.Ticker("DX-Y.NYB").history(period="1d")
             us10y = yf.Ticker("^TNX").history(period="1d")
             vix = yf.Ticker("^VIX").history(period="1d")
            
-            # Replaced US2Y=X with reliable Treasury proxies (^FVX / ^IRX)
-            us2y = yf.Ticker("^FVX").history(period="1d")
+            us2y = yf.Ticker("US2Y=X").history(period="1d")
             if us2y.empty:
-                us2y = yf.Ticker("^IRX").history(period="1d")
+                us2y = yf.Ticker("^FVX").history(period="1d")
 
             if not dxy.empty:
                 macro_cache["dxy"] = round(float(dxy['Close'].iloc[-1]), 2)
@@ -446,6 +455,7 @@ def get_gold_price():
     if clean_email == ADMIN_EMAIL.strip().lower():
         pass  # Admin granted full access
     else:
+        # Student Subscription Verification
         student = Student.query.filter_by(email=clean_email).first()
         if not student or not student.has_active_sub:
             return jsonify({
@@ -453,24 +463,16 @@ def get_gold_price():
                 "status": "PAYMENT_REQUIRED"
             }), 403
 
-    global gold_cache
-    current_time = time.time()
-
-    # Serve cached gold calculation if updated within the last 15 seconds
-    if current_time - gold_cache["last_updated"] < 15 and gold_cache["data"] is not None:
-        return jsonify(gold_cache["data"])
-
     # 2. Main Gold Engine Calculations
     symbol = "XAUUSD"
     try:
-        # Using GC=F (Gold Futures) as primary to prevent Yahoo Finance 404s
-        ticker = yf.Ticker("GC=F")
+        ticker = yf.Ticker("XAUUSD=X")
         rates_d1 = ticker.history(period="1mo", interval="1d")
         rates_h1 = ticker.history(period="5d", interval="1h")
         rates_m15 = ticker.history(period="2d", interval="15m")
-
+       
         if rates_d1.empty or rates_h1.empty:
-            ticker = yf.Ticker("SI=F")  # Safe fallback if needed
+            ticker = yf.Ticker("GC=F")
             rates_d1 = ticker.history(period="1mo", interval="1d")
             rates_h1 = ticker.history(period="5d", interval="1h")
             rates_m15 = ticker.history(period="2d", interval="15m")
@@ -515,6 +517,7 @@ def get_gold_price():
         score_4h = h4_data['bull']
         score_fast = fast_bull
         
+        # Direction-Aware Volatility Range Fix
         raw_range_score = get_score(price_range_1h, 5.0, 30.0, inverse=False)
         if fast_bull < 50.0:
             score_range = 100.0 - raw_range_score
@@ -548,7 +551,7 @@ def get_gold_price():
             round(score_macro_edge, 1)
         ]
 
-        response_payload = {
+        return jsonify({
             "symbol": symbol,
             "bid": round(current_price, 2),
             "bull_flow": round(score_macro_edge, 1),
@@ -563,18 +566,9 @@ def get_gold_price():
             "news": news,
             "posture": posture,
             "session": session
-        }
-
-        # Cache the calculated output and timestamp
-        gold_cache["data"] = response_payload
-        gold_cache["last_updated"] = current_time
-
-        return jsonify(response_payload)
-
+        })
     except Exception as e:
         print(f"Error in /api/gold: {e}")
-        if gold_cache["data"] is not None:
-            return jsonify(gold_cache["data"])
         return jsonify({"error": str(e), "bid": 0.00}), 500
 
 
