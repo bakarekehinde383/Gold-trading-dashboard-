@@ -86,7 +86,7 @@ def initialize_payment():
             return jsonify({"status": "error", "message": "Email is required"}), 400
 
         # --- ADMIN BYPASS DETECTED ---
-        if user_email == ADMIN_EMAIL.strip().lower():
+        if user_email == "bakarekehinde383@gmail.com" or user_email==str(ADMIN_EMAIL).strip().lower():
             return jsonify({
                 "status": "success", 
                 "is_admin": True,
@@ -452,7 +452,7 @@ def get_gold_price():
     clean_email = user_email.strip().lower()
 
     # Admin Bypass Check
-    if clean_email == ADMIN_EMAIL.strip().lower():
+    if clean_email == "bakarekehinde383@gmail.com" or (ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower():
         pass  # Admin granted full access
     else:
         # Student Subscription Verification
