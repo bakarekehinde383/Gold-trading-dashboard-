@@ -247,10 +247,6 @@ def flutterwave_webhook():
 # 6. KFX INTELLIGENCE FUNCTIONS (LEAVE THESE EXACTLY AS THEY ARE)
 # =========================================================
 
-def get_score(value, min_val, max_val, inverse=False):
-# ... [THE REST OF YOUR ORIGINAL CODE CONTINUES HERE] ...
-
-
 
 def get_score(value, min_val, max_val, inverse=False):
     """Normalizes any raw metric into a strict 0 to 100 score."""
