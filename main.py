@@ -512,7 +512,7 @@ def get_gold_price():
     # =========================================================
     # WEEKEND LOCKDOWN CHECK (Pre-empts market math errors)
     # =========================================================
-    now_utc = datetime.datetime.utcnow()
+    now_utc = datetime.utcnow()
     current_day = now_utc.weekday()  # 5 = Saturday, 6 = Sunday
     
     macro = get_macro_data()
