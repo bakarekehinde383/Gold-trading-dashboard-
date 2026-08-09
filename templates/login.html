@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -36,7 +35,11 @@
                     <input type="password" id="password" class="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Enter your password" required>
                 </div>
 
-                <button type="submit" id="submitBtn" class="w-full bg-gray-100 text-gray-400 font-bold text-base rounded-xl py-4 mt-2 transition duration-200" disabled>
+                <div class="flex justify-end -mt-1 mb-1">
+                    <a href="/forgot-password" class="text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors">Reset password?</a>
+                </div>
+
+                <button type="submit" id="submitBtn" class="w-full bg-gray-100 text-gray-400 font-bold text-base rounded-xl py-4 transition duration-200" disabled>
                     Log in
                 </button>
             </form>
@@ -56,7 +59,6 @@
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
 
-        // This checks if both boxes are typed in before lighting up the button
         function checkInputs() {
             if (emailInput.value.trim() !== '' && passwordInput.value.trim() !== '') {
                 submitBtn.disabled = false;
@@ -82,9 +84,8 @@
             alertBox.innerText = message;
         }
 
-        // This is the magic function that stops the page refresh
         async function handleLogin(e) {
-            e.preventDefault(); // <--- THIS STOPS THE REFRESH BUG
+            e.preventDefault();
             
             const email = emailInput.value.trim().toLowerCase();
             const password = passwordInput.value;
@@ -112,7 +113,6 @@
                     submitBtn.innerText = "Log in";
                     submitBtn.classList.remove('opacity-75');
                     
-                    // If they haven't verified their email yet, it redirects them to the verify page!
                     if (data.redirect_url) {
                         setTimeout(() => {
                             window.location.href = data.redirect_url;
