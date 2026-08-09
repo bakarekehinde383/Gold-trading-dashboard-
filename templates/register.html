@@ -1,0 +1,137 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Create your account</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        input::-ms-reveal, input::-ms-clear { display: none; }
+    </style>
+</head>
+<body class="bg-white text-gray-900 min-h-screen flex flex-col justify-between">
+
+    <div>
+        <div class="px-6 py-6">
+            <button type="button" onclick="window.location.href='/'" class="text-gray-800 hover:text-black transition">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                </svg>
+            </button>
+        </div>
+
+        <div class="px-6 flex items-center gap-4 mb-8 mt-2">
+            <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-pink-400 via-purple-400 to-indigo-400 shadow-sm flex-shrink-0"></div>
+            <div>
+                <p class="text-gray-800 font-semibold text-lg leading-tight">Welcome to KFX!</p>
+                <h1 class="text-2xl font-bold tracking-tight mt-0.5">Create your account</h1>
+            </div>
+        </div>
+
+        <div class="px-6">
+            <div id="alertBox" class="hidden mb-4 p-3.5 rounded-xl text-sm font-medium text-center"></div>
+
+            <form id="registerForm" onsubmit="handleRegister(event)" class="flex flex-col gap-5">
+                
+                <div class="flex flex-col gap-2">
+                    <label for="email" class="font-bold text-sm text-gray-900">Email</label>
+                    <input type="email" id="email" class="w-full border border-gray-300 rounded-xl px-4 py-3.5 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Enter your email" required>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <label for="password" class="font-bold text-sm text-gray-900">Create Password</label>
+                    <div class="relative">
+                        <input type="password" id="password" class="w-full border border-gray-300 rounded-xl px-4 py-3.5 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Create a secure password" required>
+                    </div>
+                </div>
+
+                <button type="submit" id="submitBtn" class="w-full bg-gray-100 text-gray-400 font-bold text-base rounded-xl py-4 mt-4 transition duration-200">
+                    Sign up & Pay
+                </button>
+            </form>
+
+            <div class="text-center mt-6">
+                <p class="text-sm font-bold text-gray-900">
+                    Already have an account? 
+                    <a href="/" class="text-[#b91c1c] hover:underline ml-1">Log in</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="pb-8 pt-6 flex justify-center">
+        <button class="flex flex-col items-center gap-2 hover:opacity-80 transition">
+            <div class="w-12 h-12 rounded-full bg-gray-50 border border-gray-100 flex items-center justify-center text-2xl shadow-sm">📋</div>
+            <span class="text-xs font-bold text-gray-900">Terms of Service</span>
+        </button>
+    </div>
+
+    <script>
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+        const submitBtn = document.getElementById('submitBtn');
+        const alertBox = document.getElementById('alertBox');
+
+        function checkInputs() {
+            if (emailInput.value.trim() !== '' && passwordInput.value.trim() !== '') {
+                submitBtn.classList.remove('bg-gray-100', 'text-gray-400');
+                submitBtn.classList.add('bg-gray-900', 'text-white', 'cursor-pointer', 'hover:bg-black');
+            } else {
+                submitBtn.classList.add('bg-gray-100', 'text-gray-400');
+                submitBtn.classList.remove('bg-gray-900', 'text-white', 'cursor-pointer', 'hover:bg-black');
+            }
+        }
+        emailInput.addEventListener('input', checkInputs);
+        passwordInput.addEventListener('input', checkInputs);
+
+        function showAlert(message, type = 'error') {
+            alertBox.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-green-50', 'text-green-600');
+            if (type === 'error') {
+                alertBox.classList.add('bg-red-50', 'text-red-600');
+            } else {
+                alertBox.classList.add('bg-green-50', 'text-green-600');
+            }
+            alertBox.innerText = message;
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const email = emailInput.value.trim().toLowerCase();
+            const password = passwordInput.value;
+
+            submitBtn.disabled = true;
+            submitBtn.innerText = "Processing...";
+
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    showAlert(data.message, "success");
+                    // Instantly redirect them to Flutterwave Checkout!
+                    setTimeout(() => {
+                        window.location.href = data.checkout_url;
+                    }, 1000);
+                } else {
+                    showAlert(data.error);
+                    submitBtn.disabled = false;
+                    submitBtn.innerText = "Sign up & Pay";
+                }
+            } catch (err) {
+                showAlert("Server communication error. Please try again.");
+                submitBtn.disabled = false;
+                submitBtn.innerText = "Sign up & Pay";
+            }
+        }
+    </script>
+</body>
+</html>
+
+
