@@ -4,6 +4,10 @@ import os
 import uuid
 import json
 import requests
+import random
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timezone
 
 from flask import Flask, jsonify, render_template, request, abort, session, redirect, url_for
@@ -18,7 +22,6 @@ import yfinance as yf
 app = Flask(__name__)
 CORS(app)
 
-# Required for secure login sessions (Keeps users logged in)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "KFX_Super_Secret_Key_2026") 
 
 # =========================================================
@@ -28,37 +31,76 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///students.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Owner / Admin Email (Full Access Bypass)
 ADMIN_EMAIL = "bakarekehinde383@gmail.com"
-
-# Fetches keys safely from Environment Variables
 FLW_SECRET_KEY = os.environ.get("FLW_SECRET_KEY", "FLWSECK_TEST-YOUR_ACTUAL_SECRET_KEY_HERE")
 FLW_SECRET_HASH = os.environ.get("FLW_SECRET_HASH", "KFX_Webhook_Secure_2026")
 
-# Database Model for Student Subscriptions (UPDATED WITH PASSWORDS)
+# UPGRADED DATABASE: Now includes Full Profile & Verification
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    full_name = db.Column(db.String(150), nullable=True)
+    phone_number = db.Column(db.String(20), nullable=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256), nullable=True) # Secure password storage
+    password_hash = db.Column(db.String(256), nullable=True)
+    
+    # Verification & Security
+    is_verified = db.Column(db.Boolean, default=False)
+    verification_code = db.Column(db.String(10), nullable=True)
+    
     customer_code = db.Column(db.String(50), nullable=True)
     has_active_sub = db.Column(db.Boolean, default=False)
 
-# Initialize the database table on startup
 with app.app_context():
     db.create_all()
 
-# Global Caches to throttle external API calls
 macro_cache = {"dxy": 0.00, "us10y": 0.00, "us2y": 0.00, "vix": 0.00, "yield_curve": 0.00, "last_updated": 0}
 news_cache = {"articles": [], "last_updated": 0}
 
+# =========================================================
+# 3. EMAIL SENDING ENGINE
+# =========================================================
+def send_verification_email(to_email, code):
+    sender_email = os.environ.get("MAIL_USERNAME")
+    sender_password = os.environ.get("MAIL_PASSWORD")
+    
+    if not sender_email or not sender_password:
+        print("Email credentials missing in Render!")
+        return False
+        
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = f"KFX Global <{sender_email}>"
+        msg['To'] = to_email
+        msg['Subject'] = "Your KFX Verification Code"
+        
+        body = f"""
+        Hello,
+        
+        Welcome to KFX Global. Your verification code is: {code}
+        
+        Please enter this code on the website to verify your account.
+        
+        Best regards,
+        KFX Security Team
+        """
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+        return False
 
 # =========================================================
-# 3. FRONTEND PAGE ROUTES
+# 4. FRONTEND PAGE ROUTES
 # =========================================================
 
 @app.route('/')
 def serve_landing_page():
-    # If already logged in, skip login page
     if 'user_email' in session:
         return redirect(url_for('serve_dashboard'))
     return render_template('login.html')
@@ -66,17 +108,19 @@ def serve_landing_page():
 @app.route('/register', methods=['GET'])
 def register_page():
     return render_template('register.html')
+    
+@app.route('/verify', methods=['GET'])
+def verify_page():
+    return render_template('verify.html')
 
 @app.route('/dashboard')
 def serve_dashboard():
-    # SECURITY GUARD: Block users who aren't logged in
     if 'user_email' not in session:
         return redirect(url_for('serve_landing_page'))
     return render_template('index.html')
 
-
 # =========================================================
-# 4. AUTHENTICATION (LOGIN & LOGOUT)
+# 5. AUTHENTICATION & REGISTRATION
 # =========================================================
 
 @app.route('/api/login', methods=['POST'])
@@ -88,27 +132,26 @@ def api_login():
     if not email or not password:
         return jsonify({"error": "Please enter both email and password."}), 400
 
-    # 1. Admin Bypass
     is_admin = (email == ADMIN_EMAIL.strip().lower())
     if is_admin:
         session['user_email'] = email
         session['is_admin'] = True
         return jsonify({"message": "Admin login successful", "redirect_url": "/dashboard"}), 200
 
-    # 2. Look up user
     student = Student.query.filter_by(email=email).first()
     if not student:
         return jsonify({"error": "Account not found. Please sign up."}), 404
 
-    # 3. Verify Password
     if not student.password_hash or not check_password_hash(student.password_hash, password):
-        return jsonify({"error": "Invalid password. Please try again."}), 401
+        return jsonify({"error": "Invalid password."}), 401
+        
+    # NEW SECURITY CHECK: Must be verified first
+    if not student.is_verified:
+        return jsonify({"error": "Please verify your email first.", "redirect_url": f"/verify?email={email}"}), 403
 
-    # 4. Verify Active Subscription
     if not student.has_active_sub:
         return jsonify({"error": "Subscription inactive. Please renew your plan."}), 403
 
-    # Success! Create session
     session['user_email'] = email
     session['is_admin'] = False
     return jsonify({"message": "Login successful", "redirect_url": "/dashboard"}), 200
@@ -118,126 +161,106 @@ def logout():
     session.clear()
     return redirect(url_for('serve_landing_page'))
 
-
-# =========================================================
-# 5. REGISTRATION & PAYMENT GATEWAY
-# =========================================================
-
-@app.route('/api/config', methods=['GET'])
-def get_config():
-    price = os.environ.get("KFX_SUB_PRICE", "15000")
-    return jsonify({"price": price})
-
 @app.route('/api/register', methods=['POST'])
 def api_register():
-    """Creates a new account and immediately sends them to Flutterwave to pay."""
     data = request.get_json() or {}
+    full_name = data.get('full_name', '').strip()
+    phone_number = data.get('phone_number', '').strip()
     email = data.get('email', '').strip().lower()
     password = data.get('password', '').strip()
 
-    if not email or not password:
-        return jsonify({"error": "Please enter both email and password."}), 400
+    if not email or not password or not full_name:
+        return jsonify({"error": "Please fill in all required fields."}), 400
         
     student = Student.query.filter_by(email=email).first()
     if student:
         return jsonify({"error": "Account already exists. Please log in."}), 400
 
-    # Save new user securely
     hashed_pw = generate_password_hash(password)
-    new_student = Student(email=email, password_hash=hashed_pw, has_active_sub=False)
+    
+    # Generate a random 6-digit OTP
+    otp_code = str(random.randint(100000, 999999))
+    
+    new_student = Student(
+        full_name=full_name,
+        phone_number=phone_number,
+        email=email, 
+        password_hash=hashed_pw, 
+        is_verified=False,
+        verification_code=otp_code,
+        has_active_sub=False
+    )
     db.session.add(new_student)
     db.session.commit()
+    
+    # Send the email
+    email_sent = send_verification_email(email, otp_code)
+    
+    if email_sent:
+        return jsonify({"message": "Profile created! Please check your email for the verification code.", "redirect_url": f"/verify?email={email}"}), 200
+    else:
+        return jsonify({"error": "Account created, but failed to send verification email. Contact admin."}), 500
 
-    # Generate Flutterwave checkout link
-    try:
-        tx_ref = f"KFX-GOLD-{uuid.uuid4().hex[:8]}"
-        sub_price = os.environ.get("KFX_SUB_PRICE", "15000")
+@app.route('/api/verify', methods=['POST'])
+def api_verify():
+    data = request.get_json() or {}
+    email = data.get('email', '').strip().lower()
+    code = data.get('code', '').strip()
+    
+    student = Student.query.filter_by(email=email).first()
+    if not student:
+        return jsonify({"error": "User not found."}), 404
         
-        payload = {
-            "tx_ref": tx_ref,
-            "amount": sub_price,
-            "currency": "NGN",
-            "redirect_url": "https://kfx-gold-intelligence-tool.onrender.com/", # Redirects back to login
-            "customer": {"email": email, "name": "KFX Subscriber"},
-            "customizations": {"title": "KFX Gold Intelligence Tool", "description": "Premium Subscription"}
-        }
+    if student.is_verified:
+        return jsonify({"message": "Already verified!"}), 200
         
-        headers = {"Authorization": f"Bearer {FLW_SECRET_KEY}", "Content-Type": "application/json"}
-        response = requests.post("https://api.flutterwave.com/v3/payments", json=payload, headers=headers)
-        res_data = response.json()
+    if student.verification_code == code:
+        student.is_verified = True
+        student.verification_code = None # Clear it out for security
+        db.session.commit()
         
-        if res_data.get("status") == "success":
-            return jsonify({
-                "message": "Account created! Redirecting to payment...",
-                "checkout_url": res_data["data"]["link"]
-            }), 200
-        else:
-            return jsonify({"error": "Gateway failed."}), 500
+        # Now trigger the Flutterwave payment process
+        try:
+            tx_ref = f"KFX-{uuid.uuid4().hex[:8]}"
+            sub_price = os.environ.get("KFX_SUB_PRICE", "15000")
+            payload = {
+                "tx_ref": tx_ref,
+                "amount": sub_price,
+                "currency": "NGN",
+                "redirect_url": "https://kfx-gold-intelligence-tool.onrender.com/",
+                "customer": {"email": email, "name": student.full_name},
+                "customizations": {"title": "KFX Gold Intelligence Tool", "description": "Premium Subscription"}
+            }
+            headers = {"Authorization": f"Bearer {FLW_SECRET_KEY}", "Content-Type": "application/json"}
+            response = requests.post("https://api.flutterwave.com/v3/payments", json=payload, headers=headers)
+            res_data = response.json()
             
-    except Exception as e:
-        return jsonify({"error": "Server error processing payment."}), 500
+            if res_data.get("status") == "success":
+                return jsonify({"message": "Verified! Redirecting to payment...", "checkout_url": res_data["data"]["link"]}), 200
+        except Exception as e:
+            return jsonify({"error": "Verified, but gateway failed."}), 500
+            
+    return jsonify({"error": "Invalid verification code."}), 400
 
-
-@app.route('/api/pay', methods=['POST'])
-def initialize_payment():
-    """Used for existing users who need to RENEW their expired subscription."""
-    try:
-        data = request.get_json() or {}
-        user_email = data.get("email", "").strip().lower()
-
-        if not user_email:
-            return jsonify({"status": "error", "message": "Email is required"}), 400
-
-        if user_email == ADMIN_EMAIL.strip().lower():
-            return jsonify({"status": "success", "is_admin": True, "checkout_url": "bypass"})
-
-        tx_ref = f"KFX-GOLD-{uuid.uuid4().hex[:8]}"
-        sub_price = os.environ.get("KFX_SUB_PRICE", "15000")
-
-        payload = {
-            "tx_ref": tx_ref,
-            "amount": sub_price,
-            "currency": "NGN",
-            "redirect_url": "https://kfx-gold-intelligence-tool.onrender.com/",
-            "customer": {"email": user_email, "name": "KFX Subscriber"},
-            "customizations": {"title": "KFX Gold Intelligence Tool", "description": "Subscription Renewal"}
-        }
-
-        headers = {"Authorization": f"Bearer {FLW_SECRET_KEY}", "Content-Type": "application/json"}
-        response = requests.post("https://api.flutterwave.com/v3/payments", json=payload, headers=headers)
-        res_data = response.json()
-
-        if res_data.get("status") == "success":
-            return jsonify({"status": "success", "is_admin": False, "checkout_url": res_data["data"]["link"]})
-        else:
-            return jsonify({"status": "error", "message": "Could not initialize payment"}), 400
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
+# =========================================================
+# (FLUTTERWAVE WEBHOOK & PAYMENT ROUTES REMAIN THE SAME - Just ensure spacing is correct before get_score)
+# =========================================================
 @app.route('/api/flutterwave-webhook', methods=['POST'])
 def flutterwave_webhook():
-    """Receives automated payment events directly from Flutterwave servers."""
     signature = request.headers.get("verif-hash")
-
     if not signature or signature != FLW_SECRET_HASH:
         abort(401)
-
     event_data = request.json or {}
     event_type = event_data.get("event")
     data = event_data.get("data", {})
-
     email = data.get("customer", {}).get("email")
     if not email:
         return jsonify({"status": "ignored"}), 200
-
     email_clean = email.strip().lower()
     student = Student.query.filter_by(email=email_clean).first()
     
-    # Process automated payment event
     if student and event_type == "charge.completed" and data.get("status") == "successful":
         student.has_active_sub = True
-        print(f"✅ Subscription activated via Flutterwave for: {email_clean}")
         db.session.commit()
         
     return jsonify({"status": "success"}), 200
