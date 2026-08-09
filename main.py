@@ -195,15 +195,18 @@ def get_macro_data():
     global macro_cache
     current_time = time.time()
    
+    # 60-second cooldown on macro queries
     if current_time - macro_cache["last_updated"] > 60:
         try:
-            dxy = yf.Ticker("DX-Y.NYB").history(period="1d")
-            us10y = yf.Ticker("^TNX").history(period="1d")
-            vix = yf.Ticker("^VIX").history(period="1d")
+            # Look back 5 days to safely bridge weekends and market closures
+            dxy = yf.Ticker("DX-Y.NYB").history(period="5d")
+            us10y = yf.Ticker("^TNX").history(period="5d")
+            vix = yf.Ticker("^VIX").history(period="5d")
            
-            us2y = yf.Ticker("US2Y=X").history(period="1d")
+            # Replaced US2Y=X with reliable Treasury proxies (^FVX / ^IRX)
+            us2y = yf.Ticker("^FVX").history(period="5d")
             if us2y.empty:
-                us2y = yf.Ticker("^FVX").history(period="1d")
+                us2y = yf.Ticker("^IRX").history(period="5d")
 
             if not dxy.empty:
                 macro_cache["dxy"] = round(float(dxy['Close'].iloc[-1]), 2)
