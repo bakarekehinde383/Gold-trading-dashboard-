@@ -35,7 +35,7 @@ ADMIN_EMAIL = "bakarekehinde383@gmail.com"
 FLW_SECRET_KEY = os.environ.get("FLW_SECRET_KEY", "FLWSECK_TEST-YOUR_ACTUAL_SECRET_KEY_HERE")
 FLW_SECRET_HASH = os.environ.get("FLW_SECRET_HASH", "KFX_Webhook_Secure_2026")
 
-# UPGRADED DATABASE: Now includes Full Profile & Verification
+# UPGRADED DATABASE: Includes Profile, Verification, AND Password Reset
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     full_name = db.Column(db.String(150), nullable=True)
@@ -46,6 +46,7 @@ class Student(db.Model):
     # Verification & Security
     is_verified = db.Column(db.Boolean, default=False)
     verification_code = db.Column(db.String(10), nullable=True)
+    reset_token = db.Column(db.String(100), nullable=True) # <-- NEW COLUMN
     
     customer_code = db.Column(db.String(50), nullable=True)
     has_active_sub = db.Column(db.Boolean, default=False)
@@ -92,7 +93,48 @@ def send_verification_email(to_email, code):
         server.quit()
         return True
     except Exception as e:
-        print(f"Failed to send email: {e}")
+        print(f"Failed to send verification email: {e}")
+        return False
+
+def send_reset_email(to_email, reset_link):
+    sender_email = os.environ.get("MAIL_USERNAME")
+    sender_password = os.environ.get("MAIL_PASSWORD")
+    
+    if not sender_email or not sender_password:
+        print("Email credentials missing! Check logs for reset link.")
+        print(f"--- PASSWORD RESET LINK FOR {to_email} ---")
+        print(reset_link)
+        print("---------------------------------------")
+        return False
+        
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = f"KFX Global <{sender_email}>"
+        msg['To'] = to_email
+        msg['Subject'] = "KFX Password Reset Request"
+        
+        body = f"""
+        Hello,
+        
+        We received a request to reset your password. Click the secure link below to create a new password:
+        
+        {reset_link}
+        
+        If you did not request this, please ignore this email. Your account remains secure.
+        
+        Best regards,
+        KFX Security Team
+        """
+        msg.attach(MIMEText(body, 'plain'))
+        
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        print(f"Failed to send reset email: {e}")
         return False
 
 # =========================================================
@@ -113,6 +155,17 @@ def register_page():
 def verify_page():
     return render_template('verify.html')
 
+@app.route('/forgot-password')
+def forgot_password_page():
+    return render_template('forgot-password.html')
+
+@app.route('/reset-password/<token>')
+def reset_password_page(token):
+    user = Student.query.filter_by(reset_token=token).first()
+    if not user:
+        return "Invalid or expired reset link. Please request a new one.", 400
+    return render_template('reset-password.html', token=token)
+
 @app.route('/dashboard')
 def serve_dashboard():
     if 'user_email' not in session:
@@ -120,7 +173,7 @@ def serve_dashboard():
     return render_template('index.html')
 
 # =========================================================
-# 5. AUTHENTICATION & REGISTRATION
+# 5. AUTHENTICATION, REGISTRATION & RESET
 # =========================================================
 
 @app.route('/api/login', methods=['POST'])
@@ -145,7 +198,6 @@ def api_login():
     if not student.password_hash or not check_password_hash(student.password_hash, password):
         return jsonify({"error": "Invalid password."}), 401
         
-    # NEW SECURITY CHECK: Must be verified first
     if not student.is_verified:
         return jsonify({"error": "Please verify your email first.", "redirect_url": f"/verify?email={email}"}), 403
 
@@ -177,8 +229,6 @@ def api_register():
         return jsonify({"error": "Account already exists. Please log in."}), 400
 
     hashed_pw = generate_password_hash(password)
-    
-    # Generate a random 6-digit OTP
     otp_code = str(random.randint(100000, 999999))
     
     new_student = Student(
@@ -193,7 +243,6 @@ def api_register():
     db.session.add(new_student)
     db.session.commit()
     
-    # Send the email
     email_sent = send_verification_email(email, otp_code)
     
     if email_sent:
@@ -216,10 +265,9 @@ def api_verify():
         
     if student.verification_code == code:
         student.is_verified = True
-        student.verification_code = None # Clear it out for security
+        student.verification_code = None 
         db.session.commit()
         
-        # Now trigger the Flutterwave payment process
         try:
             tx_ref = f"KFX-{uuid.uuid4().hex[:8]}"
             sub_price = os.environ.get("KFX_SUB_PRICE", "15000")
@@ -242,8 +290,41 @@ def api_verify():
             
     return jsonify({"error": "Invalid verification code."}), 400
 
+@app.route('/api/forgot-password', methods=['POST'])
+def api_forgot_password():
+    data = request.get_json()
+    email = data.get('email', '').strip().lower()
+    
+    user = Student.query.filter_by(email=email).first()
+    if user:
+        token = str(uuid.uuid4())
+        user.reset_token = token
+        db.session.commit()
+        
+        # Request.host_url gets the live link from Render automatically
+        reset_link = f"{request.host_url}reset-password/{token}"
+        
+        send_reset_email(email, reset_link)
+        
+    return jsonify({"message": "If that email exists, a reset link has been sent."}), 200
+
+@app.route('/api/reset-password/<token>', methods=['POST'])
+def api_reset_password(token):
+    data = request.get_json()
+    new_password = data.get('password')
+    
+    user = Student.query.filter_by(reset_token=token).first()
+    if not user:
+        return jsonify({"error": "Invalid token"}), 400
+        
+    user.password_hash = generate_password_hash(new_password) 
+    user.reset_token = None
+    db.session.commit()
+    
+    return jsonify({"message": "Password updated successfully!"}), 200
+
 # =========================================================
-# (FLUTTERWAVE WEBHOOK & PAYMENT ROUTES REMAIN THE SAME - Just ensure spacing is correct before get_score)
+# 6. FLUTTERWAVE WEBHOOK
 # =========================================================
 @app.route('/api/flutterwave-webhook', methods=['POST'])
 def flutterwave_webhook():
@@ -265,7 +346,8 @@ def flutterwave_webhook():
         
     return jsonify({"status": "success"}), 200
 
-
+     
+    
 # =========================================================
 # 6. KFX INTELLIGENCE FUNCTIONS (LEAVE THESE EXACTLY AS THEY ARE)
 # =========================================================
