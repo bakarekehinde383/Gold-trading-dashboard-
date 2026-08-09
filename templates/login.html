@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KFX Sign Up</title>
+    <title>KFX Log In</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -15,45 +16,35 @@
         <div class="px-6 flex items-center gap-4 mb-8 mt-12">
             <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-pink-400 via-purple-400 to-indigo-400 shadow-sm flex-shrink-0"></div>
             <div>
-                <p class="text-gray-800 font-semibold text-lg leading-tight">Join KFX Global</p>
-                <h1 class="text-2xl font-bold tracking-tight mt-0.5">Create your profile</h1>
+                <p class="text-gray-800 font-semibold text-lg leading-tight">Glad to have you!</p>
+                <h1 class="text-2xl font-bold tracking-tight mt-0.5">Log in to your account</h1>
             </div>
         </div>
 
         <div class="px-6 pb-8">
             <div id="alertBox" class="hidden mb-4 p-3.5 rounded-xl text-sm font-medium text-center"></div>
 
-            <form id="registerForm" onsubmit="handleRegister(event)" class="flex flex-col gap-4">
+            <form id="loginForm" onsubmit="handleLogin(event)" class="flex flex-col gap-4">
                 
                 <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-sm text-gray-900">Full Name</label>
-                    <input type="text" id="fullName" class="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="John Doe" required>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-sm text-gray-900">Phone Number</label>
-                    <input type="tel" id="phoneNumber" class="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="+234 800 000 0000" required>
-                </div>
-
-                <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-sm text-gray-900">Email Address</label>
+                    <label class="font-bold text-sm text-gray-900">Email</label>
                     <input type="email" id="email" class="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Enter your email" required>
                 </div>
 
                 <div class="flex flex-col gap-1.5">
                     <label class="font-bold text-sm text-gray-900">Password</label>
-                    <input type="password" id="password" class="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Create a strong password" required>
+                    <input type="password" id="password" class="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Enter your password" required>
                 </div>
 
-                <button type="submit" id="submitBtn" class="w-full bg-gray-900 text-white font-bold text-base rounded-xl py-4 mt-2 transition duration-200 hover:bg-black">
-                    Create Account
+                <button type="submit" id="submitBtn" class="w-full bg-gray-100 text-gray-400 font-bold text-base rounded-xl py-4 mt-2 transition duration-200" disabled>
+                    Log in
                 </button>
             </form>
 
             <div class="text-center mt-6">
                 <p class="text-sm font-bold text-gray-900">
-                    Already have an account? 
-                    <a href="/" class="text-[#b91c1c] hover:underline ml-1">Log in</a>
+                    Don't have an account? 
+                    <a href="/register" class="text-[#b91c1c] hover:underline ml-1">Sign up</a>
                 </p>
             </div>
         </div>
@@ -62,6 +53,24 @@
     <script>
         const alertBox = document.getElementById('alertBox');
         const submitBtn = document.getElementById('submitBtn');
+        const emailInput = document.getElementById('email');
+        const passwordInput = document.getElementById('password');
+
+        // This checks if both boxes are typed in before lighting up the button
+        function checkInputs() {
+            if (emailInput.value.trim() !== '' && passwordInput.value.trim() !== '') {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('bg-gray-100', 'text-gray-400');
+                submitBtn.classList.add('bg-gray-900', 'text-white', 'hover:bg-black');
+            } else {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('bg-gray-100', 'text-gray-400');
+                submitBtn.classList.remove('bg-gray-900', 'text-white', 'hover:bg-black');
+            }
+        }
+
+        emailInput.addEventListener('input', checkInputs);
+        passwordInput.addEventListener('input', checkInputs);
 
         function showAlert(message, type = 'error') {
             alertBox.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-green-50', 'text-green-600');
@@ -73,40 +82,47 @@
             alertBox.innerText = message;
         }
 
-        async function handleRegister(e) {
-            e.preventDefault();
-            const full_name = document.getElementById('fullName').value.trim();
-            const phone_number = document.getElementById('phoneNumber').value.trim();
-            const email = document.getElementById('email').value.trim().toLowerCase();
-            const password = document.getElementById('password').value;
+        // This is the magic function that stops the page refresh
+        async function handleLogin(e) {
+            e.preventDefault(); // <--- THIS STOPS THE REFRESH BUG
+            
+            const email = emailInput.value.trim().toLowerCase();
+            const password = passwordInput.value;
 
             submitBtn.disabled = true;
-            submitBtn.innerText = "Creating Profile & Sending Code...";
+            submitBtn.innerText = "Authenticating...";
             submitBtn.classList.add('opacity-75');
 
             try {
-                const response = await fetch('/api/register', {
+                const response = await fetch('/api/login', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ full_name, phone_number, email, password })
+                    body: JSON.stringify({ email, password })
                 });
                 const data = await response.json();
 
                 if (response.ok) {
-                    showAlert(data.message, "success");
+                    showAlert(data.message || "Login successful!", "success");
                     setTimeout(() => {
                         window.location.href = data.redirect_url;
-                    }, 1500);
+                    }, 1000);
                 } else {
-                    showAlert(data.error || "Registration failed.");
+                    showAlert(data.error || "Login failed.");
                     submitBtn.disabled = false;
-                    submitBtn.innerText = "Create Account";
+                    submitBtn.innerText = "Log in";
                     submitBtn.classList.remove('opacity-75');
+                    
+                    // If they haven't verified their email yet, it redirects them to the verify page!
+                    if (data.redirect_url) {
+                        setTimeout(() => {
+                            window.location.href = data.redirect_url;
+                        }, 2000);
+                    }
                 }
             } catch (err) {
                 showAlert("Server error. Please try again.");
                 submitBtn.disabled = false;
-                submitBtn.innerText = "Create Account";
+                submitBtn.innerText = "Log in";
                 submitBtn.classList.remove('opacity-75');
             }
         }
