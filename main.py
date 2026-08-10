@@ -610,13 +610,12 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
     }
 
 
-
 # ==========================================
 # PHASE 1: TECHNICAL & MACRO ENGINE HELPER
 # ==========================================
 def calculate_technicals(df):
     try:
-        if df is None or len(df) < 50:
+        if df is None or len(df) < 14:
             return {"rsi": 50.0, "ema50": 0.0, "ema200": 0.0, "bias": "NEUTRAL"}
         
         # Calculate RSI (14)
@@ -626,9 +625,12 @@ def calculate_technicals(df):
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs.iloc[-1]))
         
-        # Calculate EMAs
-        ema50 = df['Close'].ewm(span=50, adjust=False).mean().iloc[-1]
-        ema200 = df['Close'].ewm(span=200, adjust=False).mean().iloc[-1]
+        # Calculate EMAs using available data up to span limits
+        span_50 = min(50, len(df))
+        span_200 = min(200, len(df))
+        
+        ema50 = df['Close'].ewm(span=span_50, adjust=False).mean().iloc[-1]
+        ema200 = df['Close'].ewm(span=span_200, adjust=False).mean().iloc[-1]
         current_price = df['Close'].iloc[-1]
         
         # Determine Advanced Market Bias
@@ -722,26 +724,26 @@ def get_gold_price():
             }
         })
  
-    # =========================================================
+    
+        # =========================================================
     # 2. Main Gold Engine Calculations
     # =========================================================
     symbol = "XAUUSD"
     try:
-        # FIXED: Swapped GC=F to primary. Gold Futures data on Yahoo Finance is vastly more reliable for intraday intervals.
+        # Ticker fetch with period="1mo" for 1h candles so EMA 200 has enough data points
         ticker = yf.Ticker("GC=F")
         rates_d1 = ticker.history(period="1mo", interval="1d")
-        rates_h1 = ticker.history(period="5d", interval="1h")
-        rates_m15 = ticker.history(period="2d", interval="15m")
+        rates_h1 = ticker.history(period="1mo", interval="1h")  # Changed to 1mo for EMA 200 accuracy
+        rates_m15 = ticker.history(period="5d", interval="15m")
  
         # Fallback to XAUUSD=X if GC=F fails
         if rates_d1.empty or rates_h1.empty:
             ticker = yf.Ticker("XAUUSD=X")
             rates_d1 = ticker.history(period="1mo", interval="1d")
-            rates_h1 = ticker.history(period="5d", interval="1h")
-            rates_m15 = ticker.history(period="2d", interval="15m")
+            rates_h1 = ticker.history(period="1mo", interval="1h")
+            rates_m15 = ticker.history(period="5d", interval="15m")
  
-        # FIXED: Removed 'raise ValueError'. This now handles missing API data gracefully 
-        # by returning a temporary JSON warning instead of completely crashing the server.
+        # Handle API failure gracefully without crashing the server
         if rates_h1.empty or rates_d1.empty:
             print("API Warning: No price data returned from Yahoo Finance.")
             return jsonify({
@@ -784,14 +786,18 @@ def get_gold_price():
         fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
         fast_bear = round(100.0 - fast_bull, 1)
         fast_flow_data = {"bull": fast_bull, "bear": fast_bear}
-      
 
         # =========================================================
         # TECHNICAL INDICATORS & INTRADAY SCORING ENGINE
         # =========================================================
         close_prices = rates_h1['Close']
-        ema_50 = float(close_prices.ewm(span=50, adjust=False).mean().iloc[-1]) if len(close_prices) >= 50 else current_price
-        ema_200 = float(close_prices.ewm(span=200, adjust=False).mean().iloc[-1]) if len(close_prices) >= 200 else current_price
+        
+        # Calculate EMA 50 & EMA 200 properly without default price fallback
+        span_50 = min(50, len(close_prices))
+        span_200 = min(200, len(close_prices))
+        
+        ema_50 = float(close_prices.ewm(span=span_50, adjust=False).mean().iloc[-1])
+        ema_200 = float(close_prices.ewm(span=span_200, adjust=False).mean().iloc[-1])
 
         # Calculate 14-period RSI
         delta = close_prices.diff()
@@ -801,9 +807,9 @@ def get_gold_price():
         rsi_14 = float((100 - (100 / (1 + rs))).iloc[-1]) if not rs.empty else 50.0
 
         # Technical Trend Alignment
-        if current_price > ema_50 > ema_200:
+        if current_price > ema_50 and ema_50 > ema_200:
             tech_bias = "BULLISH"
-        elif current_price < ema_50 < ema_200:
+        elif current_price < ema_50 and ema_50 < ema_200:
             tech_bias = "BEARISH"
         else:
             tech_bias = "NEUTRAL"
@@ -874,6 +880,7 @@ def get_gold_price():
             "ladder_state": ladder,
             "color": color
         }
+
 
         # 8-Factor Radar Array
         score_yield = get_score(us10y_val, 3.0, 5.5, inverse=True)
