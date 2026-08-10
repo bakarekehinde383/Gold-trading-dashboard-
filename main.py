@@ -612,7 +612,7 @@ def generate_action_posture(fast_flow, volatility_score, rel_volume, macro, news
     }
 
 
-# ==========================================
+    # ==========================================
 # PHASE 1: TECHNICAL & MACRO ENGINE HELPER
 # ==========================================
 def calculate_technicals(df):
@@ -655,7 +655,8 @@ def calculate_technicals(df):
 
 
 from datetime import datetime, timezone
-import yfinance as yf
+import requests
+import pandas as pd
 
 # ---------------------------------------------------------
 # ROUTE 4: GATED API ENDPOINT (GOLD DATA)
@@ -728,28 +729,47 @@ def get_gold_price():
     # =========================================================
     symbol = "XAUUSD"
     try:
-        # Fetch 1mo data to ensure 200 EMA has enough historical data points
-        ticker = yf.Ticker("GC=F")
-        rates_d1 = ticker.history(period="1mo", interval="1d")
-        rates_h1 = ticker.history(period="1mo", interval="1h")
-        rates_m15 = ticker.history(period="5d", interval="15m")
- 
-        # Fallback to XAUUSD=X if GC=F fails
-        if rates_d1.empty or rates_h1.empty:
-            ticker = yf.Ticker("XAUUSD=X")
-            rates_d1 = ticker.history(period="1mo", interval="1d")
-            rates_h1 = ticker.history(period="1mo", interval="1h")
-            rates_m15 = ticker.history(period="5d", interval="15m")
+        # =========================================================
+        # PREMIUM XAUUSD SPOT DATA FETCH (TWELVE DATA)
+        # =========================================================
+        TWELVE_DATA_API_KEY = "b48758c67cbf475eb87bbc197505060a"
+        
+        def fetch_twelve_data(interval, outputsize):
+            url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_API_KEY}"
+            response = requests.get(url).json()
+            
+            if 'values' not in response:
+                return pd.DataFrame() # Return empty if API limit hit or error
+                
+            # Convert JSON to Pandas DataFrame so it matches your current logic
+            df = pd.DataFrame(response['values'])
+            df = df.iloc[::-1] # Reverse it so oldest data is first (top-down)
+            
+            # Format column types so math operations don't break
+            df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
+            if 'volume' not in df.columns:
+                df['volume'] = 0.0 # Forex spot sometimes lacks volume
+            else:
+                df['volume'] = df['volume'].astype(float)
+                
+            # Rename columns to match yfinance's Capitalized names
+            df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+            return df
+
+        # Fetch our timeframes
+        rates_d1 = fetch_twelve_data(interval="1day", outputsize=30)
+        rates_h1 = fetch_twelve_data(interval="1h", outputsize=250) # 250 bars covers the EMA 200
+        rates_m15 = fetch_twelve_data(interval="15min", outputsize=200)
  
         if rates_h1.empty or rates_d1.empty:
-            print("API Warning: No price data returned from Yahoo Finance.")
+            print("API Warning: No price data returned from Twelve Data.")
             return jsonify({
                 "bid": "FETCH ERROR",
                 "dxy": macro.get('dxy', 0.0),
                 "tnx": macro.get('us10y', 0.0),
                 "posture": {
                     "bias": "DATA ERROR",
-                    "action": "RETRYING YFINANCE...",
+                    "action": "RETRYING API...",
                     "color": "text-amber-500"
                 },
                 "macro": macro
@@ -930,3 +950,5 @@ if __name__ == '__main__':
     print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL if 'ADMIN_EMAIL' in locals() else 'bakarekehinde383@gmail.com'}")
     app.run(host='0.0.0.0', port=10000)
 
+
+                            
