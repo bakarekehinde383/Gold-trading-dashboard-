@@ -57,6 +57,7 @@ with app.app_context():
 macro_cache = {"dxy": 0.00, "us10y": 0.00, "us2y": 0.00, "vix": 0.00, "yield_curve": 0.00, "last_updated": 0}
 news_cache = {"articles": [], "last_updated": 0}
 
+
 # =========================================================
 # 3. EMAIL SENDING ENGINE
 # =========================================================
@@ -86,8 +87,8 @@ def send_verification_email(to_email, code):
         """
         msg.attach(MIMEText(body, 'plain'))
         
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
+        # FIX: Upgraded to secure SSL and added a 10-second timeout to prevent freezing
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
@@ -102,9 +103,6 @@ def send_reset_email(to_email, reset_link):
     
     if not sender_email or not sender_password:
         print("Email credentials missing! Check logs for reset link.")
-        print(f"--- PASSWORD RESET LINK FOR {to_email} ---")
-        print(reset_link)
-        print("---------------------------------------")
         return False
         
     try:
@@ -127,8 +125,8 @@ def send_reset_email(to_email, reset_link):
         """
         msg.attach(MIMEText(body, 'plain'))
         
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
+        # FIX: Upgraded to secure SSL and added a 10-second timeout
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
         server.login(sender_email, sender_password)
         server.send_message(msg)
         server.quit()
@@ -136,6 +134,7 @@ def send_reset_email(to_email, reset_link):
     except Exception as e:
         print(f"Failed to send reset email: {e}")
         return False
+
 
 # =========================================================
 # 4. FRONTEND PAGE ROUTES
