@@ -5,40 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>KFX Log In</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
+        .font-mono-code { font-family: 'JetBrains Mono', monospace; }
+        /* Subtle grid matching your screenshot's background */
+        .bg-grid-pattern {
+            background-image: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
     </style>
 </head>
-<body class="bg-white text-gray-900 min-h-screen flex flex-col justify-between">
-    <div>
-        <div class="px-6 pt-8 pb-2 text-center">
-            <h2 class="text-xs font-extrabold tracking-[0.25em] text-gray-400 uppercase">KFX GLOBAL</h2>
-        </div>
+<body class="bg-[#060a13] bg-grid-pattern text-slate-100 min-h-screen flex items-center justify-center p-4">
 
-        <div class="px-6 flex items-center gap-4 mb-8 mt-4">
-            <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-pink-400 via-purple-400 to-indigo-400 shadow-sm flex-shrink-0"></div>
-            <div>
-                <p class="text-gray-800 font-semibold text-lg leading-tight">Glad to have you!</p>
-                <h1 class="text-2xl font-bold tracking-tight mt-0.5">Log in to your account</h1>
-            </div>
-        </div>
+    <div class="w-full max-w-md bg-[#101726] rounded-t-lg rounded-b-xl shadow-2xl relative overflow-hidden flex flex-col">
+        
+        <div class="w-full h-2 bg-[#eab308]"></div>
 
-        <div class="px-6 pb-8">
-            <div id="alertBox" class="hidden mb-4 p-3.5 rounded-xl text-sm font-medium text-center"></div>
-
-            <form id="loginForm" onsubmit="handleLogin(event)" class="flex flex-col gap-4">
+        <div class="p-8">
+            <div class="flex flex-col items-center mb-10 mt-2">
+                <div class="w-12 h-12 rounded-sm bg-[#eab308] flex items-center justify-center mb-4 shadow-lg">
+                    <span class="font-black text-slate-900 text-xl tracking-wide">KFX</span>
+                </div>
                 
-                <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-sm text-gray-900">Email</label>
-                    <input type="email" id="email" class="w-full border border-gray-300 rounded-xl px-4 py-3 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Enter your email" required>
+                <h1 class="text-[28px] sm:text-3xl font-black tracking-[0.25em] text-white text-center uppercase leading-none">
+                    KFX GLOBAL
+                </h1>
+                
+                <p class="font-mono-code text-[11px] sm:text-xs font-semibold tracking-[0.2em] text-slate-400 mt-3 uppercase text-center">
+                    Intelligence Terminal Access
+                </p>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)" class="flex flex-col gap-6">
+                
+                <div class="flex flex-col gap-2">
+                    <label class="font-mono-code text-[10px] font-bold text-slate-400 tracking-[0.15em] uppercase">
+                        Authentication Email
+                    </label>
+                    <input type="email" id="email" 
+                           class="w-full bg-[#f8fafc] border-none rounded-md px-4 py-3.5 text-slate-900 font-mono-code font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#eab308] transition-all" 
+                           placeholder="Enter your email" required>
                 </div>
 
-                <div class="flex flex-col gap-1.5">
-                    <label class="font-bold text-sm text-gray-900">Password</label>
+                <div class="flex flex-col gap-2">
+                    <div class="flex justify-between items-center">
+                        <label class="font-mono-code text-[10px] font-bold text-slate-400 tracking-[0.15em] uppercase">
+                            Credential
+                        </label>
+                        <a href="/forgot-password" class="text-[10px] font-mono-code font-bold text-slate-500 hover:text-[#eab308] transition-colors uppercase tracking-wider">
+                            Reset?
+                        </a>
+                    </div>
                     <div class="relative">
-                        <input type="password" id="password" class="w-full border border-gray-300 rounded-xl px-4 py-3 pr-12 text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900" placeholder="Enter your password" required>
-                        <button type="button" onclick="togglePassword('password', 'eyeIcon')" class="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-gray-900">
+                        <input type="password" id="password" 
+                               class="w-full bg-[#f8fafc] border-none rounded-md px-4 py-3.5 pr-12 text-slate-900 font-mono-code font-bold text-sm focus:outline-none focus:ring-2 focus:ring-[#eab308] transition-all" 
+                               placeholder="Enter your password" required>
+                        <button type="button" onclick="togglePassword('password', 'eyeIcon')" class="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-500 hover:text-slate-900">
                             <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -47,19 +71,20 @@
                     </div>
                 </div>
 
-                <div class="flex justify-end -mt-1 mb-1">
-                    <a href="/forgot-password" class="text-sm font-semibold text-gray-500 hover:text-gray-900 transition-colors">Reset password?</a>
-                </div>
-
-                <button type="submit" id="submitBtn" class="w-full bg-gray-100 text-gray-400 font-bold text-base rounded-xl py-4 transition duration-200" disabled>
-                    Log in
+                <button type="submit" id="submitBtn" 
+                        class="w-full bg-[#eab308] hover:bg-[#d97706] text-slate-950 font-black text-sm uppercase tracking-[0.2em] rounded-md py-4 mt-2 transition duration-150 shadow-md active:scale-[0.99] disabled:opacity-75 disabled:cursor-not-allowed">
+                    Enter Portal
                 </button>
             </form>
 
-            <div class="text-center mt-6">
-                <p class="text-sm font-bold text-gray-900">
-                    Don't have an account? 
-                    <a href="/register" class="text-[#b91c1c] hover:underline ml-1">Sign up</a>
+            <div id="alertBox" class="hidden mt-5 text-sm font-mono-code font-medium text-center"></div>
+
+            <div class="text-center mt-8">
+                <p class="text-[11px] font-mono-code text-slate-500 tracking-wide uppercase">
+                    New to the platform? 
+                    <a href="/register" class="text-[#eab308] hover:text-white font-bold ml-1 transition-colors">
+                        Sign up
+                    </a>
                 </p>
             </div>
         </div>
@@ -71,27 +96,12 @@
         const emailInput = document.getElementById('email');
         const passwordInput = document.getElementById('password');
 
-        function checkInputs() {
-            if (emailInput.value.trim() !== '' && passwordInput.value.trim() !== '') {
-                submitBtn.disabled = false;
-                submitBtn.classList.remove('bg-gray-100', 'text-gray-400');
-                submitBtn.classList.add('bg-gray-900', 'text-white', 'hover:bg-black');
-            } else {
-                submitBtn.disabled = true;
-                submitBtn.classList.add('bg-gray-100', 'text-gray-400');
-                submitBtn.classList.remove('bg-gray-900', 'text-white', 'hover:bg-black');
-            }
-        }
-
-        emailInput.addEventListener('input', checkInputs);
-        passwordInput.addEventListener('input', checkInputs);
-
         function showAlert(message, type = 'error') {
-            alertBox.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-green-50', 'text-green-600');
+            alertBox.classList.remove('hidden', 'text-red-400', 'text-emerald-400');
             if (type === 'error') {
-                alertBox.classList.add('bg-red-50', 'text-red-600');
+                alertBox.classList.add('text-red-400');
             } else {
-                alertBox.classList.add('bg-green-50', 'text-green-600');
+                alertBox.classList.add('text-emerald-400');
             }
             alertBox.innerText = message;
         }
@@ -103,8 +113,8 @@
             const password = passwordInput.value;
 
             submitBtn.disabled = true;
-            submitBtn.innerText = "Authenticating...";
-            submitBtn.classList.add('opacity-75');
+            submitBtn.innerText = "AUTHENTICATING...";
+            alertBox.classList.add('hidden'); // hide alert on new attempt
 
             try {
                 const response = await fetch('/api/login', {
@@ -120,10 +130,9 @@
                         window.location.href = data.redirect_url;
                     }, 1000);
                 } else {
-                    showAlert(data.error || "Login failed.");
+                    showAlert(data.error || "System error verifying access. Try again.");
                     submitBtn.disabled = false;
-                    submitBtn.innerText = "Log in";
-                    submitBtn.classList.remove('opacity-75');
+                    submitBtn.innerText = "ENTER PORTAL";
                     
                     if (data.redirect_url) {
                         setTimeout(() => {
@@ -132,10 +141,9 @@
                     }
                 }
             } catch (err) {
-                showAlert("Server error. Please try again.");
+                showAlert("System error verifying access. Try again.");
                 submitBtn.disabled = false;
-                submitBtn.innerText = "Log in";
-                submitBtn.classList.remove('opacity-75');
+                submitBtn.innerText = "ENTER PORTAL";
             }
         }
 
