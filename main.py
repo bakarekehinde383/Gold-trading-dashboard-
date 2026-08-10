@@ -651,6 +651,9 @@ def calculate_technicals(df):
 
 
 
+from datetime import datetime, timezone
+import yfinance as yf
+
 # ---------------------------------------------------------
 # ROUTE 4: GATED API ENDPOINT (GOLD DATA)
 # ---------------------------------------------------------
@@ -660,9 +663,9 @@ def get_gold_price():
     user_email = request.headers.get('Authorization')
     if not user_email:
         return jsonify({"error": "Unauthorized. Please enter your email."}), 401
-
+ 
     clean_email = user_email.strip().lower()
-
+ 
     # Admin Bypass Check
     if clean_email == "bakarekehinde383@gmail.com" or (ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower()):
         pass  # Admin granted full access
@@ -674,17 +677,19 @@ def get_gold_price():
                 "error": "Subscription expired or inactive.",
                 "status": "PAYMENT_REQUIRED"
             }), 403
-
+ 
     # =========================================================
     # WEEKEND LOCKDOWN CHECK (Pre-empts market math errors)
     # =========================================================
-    now_utc = datetime.utcnow()
-    current_day = now_utc.weekday()  # 5 = Saturday, 6 = Sunday
     
+    # FIXED: Replaced deprecated datetime.utcnow()
+    now_utc = datetime.now(timezone.utc)
+    current_day = now_utc.weekday()  # 5 = Saturday, 6 = Sunday
+ 
     macro = get_macro_data()
     news = get_news_data()
     session = get_killzone()
-
+ 
     # Lock down on Saturday or Sunday before market open (21:00 UTC)
     if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
         return jsonify({
@@ -716,52 +721,70 @@ def get_gold_price():
                 "bias": "CLOSED"
             }
         })
-
+ 
+    # =========================================================
     # 2. Main Gold Engine Calculations
+    # =========================================================
     symbol = "XAUUSD"
     try:
-        ticker = yf.Ticker("XAUUSD=X")
+        # FIXED: Swapped GC=F to primary. Gold Futures data on Yahoo Finance is vastly more reliable for intraday intervals.
+        ticker = yf.Ticker("GC=F")
         rates_d1 = ticker.history(period="1mo", interval="1d")
         rates_h1 = ticker.history(period="5d", interval="1h")
         rates_m15 = ticker.history(period="2d", interval="15m")
-       
+ 
+        # Fallback to XAUUSD=X if GC=F fails
         if rates_d1.empty or rates_h1.empty:
-            ticker = yf.Ticker("GC=F")
+            ticker = yf.Ticker("XAUUSD=X")
             rates_d1 = ticker.history(period="1mo", interval="1d")
             rates_h1 = ticker.history(period="5d", interval="1h")
             rates_m15 = ticker.history(period="2d", interval="15m")
-
+ 
+        # FIXED: Removed 'raise ValueError'. This now handles missing API data gracefully 
+        # by returning a temporary JSON warning instead of completely crashing the server.
         if rates_h1.empty or rates_d1.empty:
-            raise ValueError("No price data returned from provider.")
-
+            print("API Warning: No price data returned from Yahoo Finance.")
+            return jsonify({
+                "bid": "FETCH ERROR",
+                "dxy": macro.get('dxy', 0.0),
+                "tnx": macro.get('us10y', 0.0),
+                "posture": {
+                    "bias": "DATA ERROR",
+                    "action": "RETRYING YFINANCE...",
+                    "color": "text-amber-500"
+                },
+                "macro": macro
+            }), 200
+ 
         current_price = float(rates_h1['Close'].iloc[-1])
         today_d1 = rates_d1.iloc[-1]
-
+ 
         d1_range = float(today_d1['High'] - today_d1['Low'])
         adr_14 = float((rates_d1['High'] - rates_d1['Low']).tail(14).mean())
         volatility_score = 50 if adr_14 == 0 else max(0, min(100, (d1_range / adr_14) * 50))
-
+ 
         if not rates_h1.empty:
             recent_high = float(rates_h1['High'].tail(14).max())
             recent_low = float(rates_h1['Low'].tail(14).min())
             price_range_1h = recent_high - recent_low
         else:
             price_range_1h = 10.0
-
+ 
         if len(rates_h1) >= 14:
             current_h1_vol = float(rates_h1['Volume'].iloc[-1])
             avg_h1_vol = float(rates_h1['Volume'].tail(14).mean())
             rel_volume = (current_h1_vol / avg_h1_vol) if avg_h1_vol > 0 else 1.0
         else:
             rel_volume = 1.0
-
+ 
         h4_data = calculate_flow_yf(rates_h1.tail(16))
         h1_data = calculate_flow_yf(rates_h1.tail(4))
         m15_data = calculate_flow_yf(rates_m15.tail(4))
-
+ 
         fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
         fast_bear = round(100.0 - fast_bull, 1)
         fast_flow_data = {"bull": fast_bull, "bear": fast_bear}
+      
 
         # =========================================================
         # TECHNICAL INDICATORS & INTRADAY SCORING ENGINE
