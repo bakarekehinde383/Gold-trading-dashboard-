@@ -734,33 +734,57 @@ def get_gold_price():
         # =========================================================
         TWELVE_DATA_API_KEY = "b48758c67cbf475eb87bbc197505060a"
         
+        # We need a cache because Twelve Data Free Tier only allows 8 requests per minute!
+        if not hasattr(app, 'twelve_data_cache'):
+            app.twelve_data_cache = {
+                "1day": {"time": 0, "data": pd.DataFrame()},
+                "1h": {"time": 0, "data": pd.DataFrame()},
+                "15min": {"time": 0, "data": pd.DataFrame()}
+            }
+            
         def fetch_twelve_data(interval, outputsize):
-            url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_API_KEY}"
-            response = requests.get(url).json()
+            import time
+            current_time = time.time()
+            cache_entry = app.twelve_data_cache[interval]
             
-            if 'values' not in response:
-                return pd.DataFrame() # Return empty if API limit hit or error
-                
-            # Convert JSON to Pandas DataFrame so it matches your current logic
-            df = pd.DataFrame(response['values'])
-            df = df.iloc[::-1] # Reverse it so oldest data is first (top-down)
-            
-            # Format column types so math operations don't break
-            df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
-            if 'volume' not in df.columns:
-                df['volume'] = 0.0 # Forex spot sometimes lacks volume
-            else:
-                df['volume'] = df['volume'].astype(float)
-                
-            # Rename columns to match yfinance's Capitalized names
-            df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-            return df
+            # If the cached data is less than 60 seconds old, use it! (Prevents ban)
+            if not cache_entry["data"].empty and (current_time - cache_entry["time"]) < 60:
+                return cache_entry["data"].copy()
 
-        # Fetch our timeframes
+            # Otherwise, fetch fresh data
+            url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_API_KEY}"
+            
+            try:
+                response = requests.get(url).json()
+                
+                if 'values' not in response:
+                    print(f"Twelve Data Limit Hit or Error: {response}")
+                    return cache_entry["data"].copy() # Fallback to old data if limit hit
+                    
+                df = pd.DataFrame(response['values'])
+                df = df.iloc[::-1]
+                df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
+                if 'volume' not in df.columns:
+                    df['volume'] = 0.0
+                else:
+                    df['volume'] = df['volume'].astype(float)
+                    
+                df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
+                
+                # Update Cache
+                app.twelve_data_cache[interval] = {"time": current_time, "data": df.copy()}
+                return df
+                
+            except Exception as e:
+                print(f"Twelve Data Fetch Error: {e}")
+                return cache_entry["data"].copy()
+
+        # Fetch our timeframes (This now goes through the cache!)
         rates_d1 = fetch_twelve_data(interval="1day", outputsize=30)
-        rates_h1 = fetch_twelve_data(interval="1h", outputsize=250) # 250 bars covers the EMA 200
+        rates_h1 = fetch_twelve_data(interval="1h", outputsize=250)
         rates_m15 = fetch_twelve_data(interval="15min", outputsize=200)
- 
+
+
         if rates_h1.empty or rates_d1.empty:
             print("API Warning: No price data returned from Twelve Data.")
             return jsonify({
