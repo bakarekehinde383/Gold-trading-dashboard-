@@ -4,3 +4,5 @@ yfinance>=0.2.40
 requests
 gunicorn
 Flask-SQLAlchemy==3.0.5
+requests==2.31.0
+pandas==2.1.1
