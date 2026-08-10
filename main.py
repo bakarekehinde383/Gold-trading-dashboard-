@@ -29,7 +29,7 @@ app.secret_key = os.environ.get("FLASK_SECRET_KEY", "KFX_Super_Secret_Key_2026")
 # =========================================================
 # 2. DATABASE CONFIGURATION
 # =========================================================
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///students.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:llhcKet2GtYKjfRj@db.faivtufcdphtmnfcbqjl.supabase.co:5432/postgres'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
