@@ -59,80 +59,77 @@ news_cache = {"articles": [], "last_updated": 0}
 
 
 # =========================================================
-# 3. EMAIL SENDING ENGINE
+# 3. EMAIL SENDING ENGINE (VIA BREVO API)
 # =========================================================
 def send_verification_email(to_email, code):
+    api_key = os.environ.get("BREVO_API_KEY")
     sender_email = os.environ.get("MAIL_USERNAME")
-    sender_password = os.environ.get("MAIL_PASSWORD")
     
-    if not sender_email or not sender_password:
-        print("Email credentials missing in Render!")
+    if not api_key or not sender_email:
+        print("API Key or Sender Email missing in Render!")
         return False
         
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json"
+    }
+    
+    payload = {
+        "sender": {"name": "KFX Global", "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": "Your KFX Verification Code",
+        "textContent": f"Hello,\n\nWelcome to KFX Global. Your verification code is: {code}\n\nPlease enter this code on the website to verify your account.\n\nBest regards,\nKFX Security Team"
+    }
+    
     try:
-        msg = MIMEMultipart()
-        msg['From'] = f"KFX Global <{sender_email}>"
-        msg['To'] = to_email
-        msg['Subject'] = "Your KFX Verification Code"
+        # Uses standard HTTPS (port 443), which Render's free tier allows!
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
         
-        body = f"""
-        Hello,
-        
-        Welcome to KFX Global. Your verification code is: {code}
-        
-        Please enter this code on the website to verify your account.
-        
-        Best regards,
-        KFX Security Team
-        """
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # FIX: Upgraded to secure SSL and added a 10-second timeout to prevent freezing
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
-        return True
+        # 201 means "Created/Queued successfully" in Brevo's system
+        if response.status_code in [200, 201, 202]:
+            return True
+        else:
+            print(f"Brevo API Error: {response.text}")
+            return False
     except Exception as e:
-        print(f"Failed to send verification email: {e}")
+        print(f"Failed to reach email API: {e}")
         return False
 
 def send_reset_email(to_email, reset_link):
+    api_key = os.environ.get("BREVO_API_KEY")
     sender_email = os.environ.get("MAIL_USERNAME")
-    sender_password = os.environ.get("MAIL_PASSWORD")
     
-    if not sender_email or not sender_password:
-        print("Email credentials missing! Check logs for reset link.")
+    if not api_key or not sender_email:
+        print("API Key or Sender Email missing! Check logs for reset link.")
+        print(f"--- LINK FOR {to_email} ---: {reset_link}")
         return False
         
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json"
+    }
+    
+    payload = {
+        "sender": {"name": "KFX Global", "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": "KFX Password Reset Request",
+        "textContent": f"Hello,\n\nWe received a request to reset your password. Click the secure link below to create a new password:\n\n{reset_link}\n\nIf you did not request this, please ignore this email. Your account remains secure.\n\nBest regards,\nKFX Security Team"
+    }
+    
     try:
-        msg = MIMEMultipart()
-        msg['From'] = f"KFX Global <{sender_email}>"
-        msg['To'] = to_email
-        msg['Subject'] = "KFX Password Reset Request"
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
         
-        body = f"""
-        Hello,
-        
-        We received a request to reset your password. Click the secure link below to create a new password:
-        
-        {reset_link}
-        
-        If you did not request this, please ignore this email. Your account remains secure.
-        
-        Best regards,
-        KFX Security Team
-        """
-        msg.attach(MIMEText(body, 'plain'))
-        
-        # FIX: Upgraded to secure SSL and added a 10-second timeout
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
-        server.login(sender_email, sender_password)
-        server.send_message(msg)
-        server.quit()
-        return True
+        if response.status_code in [200, 201, 202]:
+            return True
+        else:
+            print(f"Brevo API Error: {response.text}")
+            return False
     except Exception as e:
-        print(f"Failed to send reset email: {e}")
+        print(f"Failed to reach email API: {e}")
         return False
 
 
