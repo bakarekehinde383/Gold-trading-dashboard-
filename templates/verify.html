@@ -5,39 +5,63 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>KFX Verify Email</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
     <style>
         body { font-family: 'Inter', sans-serif; }
+        .font-mono-code { font-family: 'JetBrains Mono', monospace; }
+        /* Subtle grid matching the background */
+        .bg-grid-pattern {
+            background-image: linear-gradient(to right, rgba(255,255,255,0.02) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(255,255,255,0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
     </style>
 </head>
-<body class="bg-white text-gray-900 min-h-screen flex flex-col justify-between">
-    <div>
-        <div class="px-6 flex items-center gap-4 mb-8 mt-12">
-            <div class="w-14 h-14 rounded-full bg-gradient-to-tr from-pink-400 via-purple-400 to-indigo-400 shadow-sm flex-shrink-0"></div>
-            <div>
-                <p class="text-gray-800 font-semibold text-lg leading-tight">Security Check</p>
-                <h1 class="text-2xl font-bold tracking-tight mt-0.5">Verify your email</h1>
-            </div>
-        </div>
+<body class="bg-[#060a13] bg-grid-pattern text-slate-100 min-h-screen flex items-center justify-center p-4">
 
-        <div class="px-6">
-            <p class="text-sm text-gray-600 mb-6 font-medium">
-                We've sent a 6-digit verification code to <br>
-                <span id="displayEmail" class="font-bold text-gray-900"></span>.
-            </p>
+    <div class="w-full max-w-md bg-[#101726] rounded-t-lg rounded-b-xl shadow-2xl relative overflow-hidden flex flex-col">
+        
+        <div class="w-full h-2 bg-[#eab308]"></div>
 
-            <div id="alertBox" class="hidden mb-4 p-3.5 rounded-xl text-sm font-medium text-center"></div>
-
-            <form id="verifyForm" onsubmit="handleVerify(event)" class="flex flex-col gap-5">
-                <div class="flex flex-col gap-2">
-                    <label class="font-bold text-sm text-gray-900">Enter Verification Code</label>
-                    <input type="text" id="code" class="w-full border border-gray-300 rounded-xl px-4 py-3.5 text-gray-900 font-medium focus:outline-none focus:ring-2 focus:ring-gray-900 text-center tracking-widest text-lg" placeholder="123456" maxlength="6" required>
+        <div class="p-8">
+            <div class="flex flex-col items-center mb-10 mt-2">
+                <div class="w-12 h-12 rounded-sm bg-[#eab308] flex items-center justify-center mb-4 shadow-lg">
+                    <span class="font-black text-slate-900 text-xl tracking-wide">KFX</span>
                 </div>
+                
+                <h1 class="text-[28px] sm:text-3xl font-black tracking-[0.25em] text-white text-center uppercase leading-none">
+                    KFX GLOBAL
+                </h1>
+                
+                <p class="font-mono-code text-[11px] sm:text-xs font-semibold tracking-[0.2em] text-slate-400 mt-3 uppercase text-center">
+                    Security Verification
+                </p>
+            </div>
 
-                <button type="submit" id="submitBtn" class="w-full bg-gray-900 text-white font-bold text-base rounded-xl py-4 mt-2 transition duration-200 hover:bg-black">
-                    Verify & Proceed to Payment
-                </button>
-            </form>
+            <div class="px-2">
+                <p class="font-mono-code text-[11px] text-slate-400 text-center mb-8 leading-relaxed tracking-wider uppercase">
+                    We've sent a 6-digit verification code to <br>
+                    <span id="displayEmail" class="font-bold text-[#eab308] mt-1 inline-block"></span>
+                </p>
+
+                <form id="verifyForm" onsubmit="handleVerify(event)" class="flex flex-col gap-6">
+                    <div class="flex flex-col gap-2">
+                        <label class="font-mono-code text-[10px] font-bold text-slate-400 tracking-[0.15em] uppercase text-center">
+                            Enter Verification Code
+                        </label>
+                        <input type="text" id="code" 
+                               class="w-full bg-[#f8fafc] border-none rounded-md px-4 py-4 text-slate-900 font-mono-code font-bold focus:outline-none focus:ring-2 focus:ring-[#eab308] transition-all text-center tracking-[0.5em] text-xl" 
+                               placeholder="123456" maxlength="6" required>
+                    </div>
+
+                    <button type="submit" id="submitBtn" 
+                            class="w-full bg-[#eab308] hover:bg-[#d97706] text-slate-950 font-black text-sm uppercase tracking-[0.15em] rounded-md py-4 mt-2 transition duration-150 shadow-md active:scale-[0.99] disabled:opacity-75 disabled:cursor-not-allowed">
+                        Verify & Proceed to Payment
+                    </button>
+                </form>
+
+                <div id="alertBox" class="hidden mt-6 text-sm font-mono-code font-medium text-center"></div>
+            </div>
         </div>
     </div>
     
@@ -52,15 +76,15 @@
         if (userEmail) {
             document.getElementById('displayEmail').innerText = userEmail;
         } else {
-            document.getElementById('displayEmail').innerText = "your email";
+            document.getElementById('displayEmail').innerText = "YOUR EMAIL";
         }
 
         function showAlert(message, type = 'error') {
-            alertBox.classList.remove('hidden', 'bg-red-50', 'text-red-600', 'bg-green-50', 'text-green-600');
+            alertBox.classList.remove('hidden', 'text-red-400', 'text-emerald-400');
             if (type === 'error') {
-                alertBox.classList.add('bg-red-50', 'text-red-600');
+                alertBox.classList.add('text-red-400');
             } else {
-                alertBox.classList.add('bg-green-50', 'text-green-600');
+                alertBox.classList.add('text-emerald-400');
             }
             alertBox.innerText = message;
         }
@@ -75,8 +99,9 @@
             }
 
             submitBtn.disabled = true;
-            submitBtn.innerText = "Verifying Code...";
+            submitBtn.innerText = "VERIFYING CODE...";
             submitBtn.classList.add('opacity-75');
+            alertBox.classList.add('hidden');
 
             try {
                 const response = await fetch('/api/verify', {
@@ -94,13 +119,13 @@
                 } else {
                     showAlert(data.error || "Verification failed.");
                     submitBtn.disabled = false;
-                    submitBtn.innerText = "Verify & Proceed to Payment";
+                    submitBtn.innerText = "VERIFY & PROCEED TO PAYMENT";
                     submitBtn.classList.remove('opacity-75');
                 }
             } catch (err) {
-                showAlert("Server error. Please try again.");
+                showAlert("System error verifying access. Please try again.");
                 submitBtn.disabled = false;
-                submitBtn.innerText = "Verify & Proceed to Payment";
+                submitBtn.innerText = "VERIFY & PROCEED TO PAYMENT";
                 submitBtn.classList.remove('opacity-75');
             }
         }
