@@ -404,9 +404,15 @@ def get_news_data():
    
     if current_time - news_cache.get("last_updated", 0) > 300:
         try:
-            headers = {'User-Agent': 'Mozilla/5.0'}
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
             url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
             response = requests.get(url, headers=headers, timeout=10)
+            
+            # This will print the exact block message if Forex Factory rejects your server!
+            if response.status_code != 200:
+                print(f"NEWS FEED BLOCKED! Status Code: {response.status_code}")
+                print(f"Response: {response.text[:250]}")
+            
             data = response.json()
            
             articles = []
@@ -430,13 +436,16 @@ def get_news_data():
                                 "impact": impact_level,
                                 "is_imminent": imminent
                             })
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        # Prints if the date format is weird
+                        print(f"Date parsing error for {event.get('title')}: {e}")
            
             news_cache["articles"] = articles[:4]
             news_cache["last_updated"] = current_time
-        except Exception:
-            pass
+            
+        except Exception as e:
+            # THIS IS WHY YOUR LOGS WERE EMPTY! Now it will print the crash.
+            print(f"CRITICAL NEWS FEED ERROR: {e}")
            
     return news_cache.get("articles", [])
 
