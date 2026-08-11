@@ -248,6 +248,7 @@ def api_register():
     else:
         return jsonify({"error": "Account created, but failed to send verification email. Contact admin."}), 500
 
+
 @app.route('/api/verify', methods=['POST'])
 def api_verify():
     data = request.get_json() or {}
@@ -268,11 +269,12 @@ def api_verify():
         
         try:
             tx_ref = f"KFX-{uuid.uuid4().hex[:8]}"
-            sub_price = os.environ.get("KFX_SUB_PRICE", "15000")
+            sub_price = os.environ.get("KFX_SUB_PRICE", "150000")
             payload = {
                 "tx_ref": tx_ref,
                 "amount": sub_price,
                 "currency": "NGN",
+                "payment_plan": "165914",
                 "redirect_url": "https://kfx-gold-intelligence-tool.onrender.com/",
                 "customer": {"email": email, "name": student.full_name},
                 "customizations": {"title": "KFX Gold Intelligence Tool", "description": "Premium Subscription"}
