@@ -326,22 +326,35 @@ def api_reset_password(token):
 # =========================================================
 @app.route('/api/flutterwave-webhook', methods=['POST'])
 def flutterwave_webhook():
+    # 1. Verify the request is actually from Flutterwave
     signature = request.headers.get("verif-hash")
     if not signature or signature != FLW_SECRET_HASH:
         abort(401)
+        
     event_data = request.json or {}
     event_type = event_data.get("event")
     data = event_data.get("data", {})
+    
+    # 2. Find the customer's email in the payload
     email = data.get("customer", {}).get("email")
     if not email:
         return jsonify({"status": "ignored"}), 200
+        
     email_clean = email.strip().lower()
     student = Student.query.filter_by(email=email_clean).first()
     
-    if student and event_type == "charge.completed" and data.get("status") == "successful":
-        student.has_active_sub = True
-        db.session.commit()
-        
+    # 3. The Gatekeeper Logic
+    if student:
+        # Turn ON access if they paid successfully
+        if event_type == "charge.completed" and data.get("status") == "successful":
+            student.has_active_sub = True
+            db.session.commit()
+            
+        # Turn OFF access if they cancel or their billing expires
+        elif event_type == "subscription.cancelled":
+            student.has_active_sub = False
+            db.session.commit()
+            
     return jsonify({"status": "success"}), 200
 
      
