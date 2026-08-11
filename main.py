@@ -836,7 +836,7 @@ def get_gold_price():
         fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
         fast_bear = round(100.0 - fast_bull, 1)
         fast_flow_data = {"bull": fast_bull, "bear": fast_bear}
-
+ 
         # =========================================================
         # TECHNICAL INDICATORS & INTRADAY SCORING ENGINE
         # =========================================================
@@ -878,6 +878,7 @@ def get_gold_price():
         elif us10y_val > 4.50 or dxy_val > 105.50:
             score -= 5.0
 
+        # YOUR ORIGINAL MATH IS KEPT EXACTLY THE SAME HERE
         if rsi_14 > 75:
             score = min(score, 57.0)
         elif rsi_14 < 25:
@@ -885,30 +886,54 @@ def get_gold_price():
 
         total_score = int(max(0, min(100, round(score))))
 
-        if total_score >= 58:
+        # =========================================================
+        # THE LADDER (WHERE THE MANAGE EXIT IS ADDED)
+        # =========================================================
+        
+        # 1. First, we check if your engine flagged exhaustion (Exit Trade)
+        if rsi_14 > 75:
+            action = "MANAGE: BULLISH EXHAUSTION - TRAIL STOPS"
+            ladder = "MANAGE"
+            color = "text-yellow-400"
+            bias = "EXHAUSTED BULLISH"
+            narrative = "RSI > 75 indicating overbought conditions. Lock in partial profits or tighten trailing stops."
+            
+        elif rsi_14 < 25:
+            action = "MANAGE: BEARISH EXHAUSTION - COVER/SCALE OUT"
+            ladder = "MANAGE"
+            color = "text-yellow-400"
+            bias = "EXHAUSTED BEARISH"
+            narrative = "RSI < 25 indicating oversold extension. High probability of mean-reversion move."
+
+        # 2. If no exhaustion, we proceed with your exact original logic
+        elif total_score >= 58:
             action = "ACT: HEAVY BULLISH FLOW - EXECUTE LONG"
             ladder = "ACT"
             color = "text-emerald-400"
             bias = "BULLISH"
             narrative = "Intraday tape and technicals align for long execution. Enter on 15m pullback."
+            
         elif total_score >= 53:
             action = "PREPARE: BUYERS ACCUMULATING"
             ladder = "PREPARE"
             color = "text-orange-400"
             bias = "LEANING BULLISH"
             narrative = "Bullish momentum building. Wait for 15m tape confirmation."
+            
         elif total_score <= 42:
             action = "ACT: HEAVY BEARISH FLOW - EXECUTE SHORT"
             ladder = "ACT"
             color = "text-red-400"
             bias = "BEARISH"
             narrative = "Intraday sellers dominate tape. Technicals align for short execution. Sell rallies."
+            
         elif total_score <= 47:
             action = "PREPARE: SELLERS ACCUMULATING"
             ladder = "PREPARE"
             color = "text-orange-400"
             bias = "LEANING BEARISH"
             narrative = "Bearish momentum building. Wait for 15m breakdown."
+            
         else:
             action = "OBSERVE: NEUTRAL RANGE"
             ladder = "OBSERVE"
@@ -924,6 +949,8 @@ def get_gold_price():
             "ladder_state": ladder,
             "color": color
         }
+
+        
 
         # 8-Factor Radar Factors
         score_yield = get_score(us10y_val, 3.0, 5.5, inverse=True)
