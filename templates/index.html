@@ -399,10 +399,11 @@
             });
         }
 
-        let fetchInterval;
+  let fetchInterval;
 
         async function fetchGoldData() {
-            const userEmail = localStorage.getItem('kfx_email');
+            // FIX 1: Changed 'kfx_email' to 'user_email' to match the login page!
+            const userEmail = localStorage.getItem('user_email');
             
             if (!userEmail) {
                 window.location.href = '/';
@@ -415,7 +416,8 @@
                 });
 
                 if (response.status === 401 || response.status === 403) {
-                    localStorage.removeItem('kfx_email');
+                    // FIX 2: Changed 'kfx_email' to 'user_email' so it clears properly on logout
+                    localStorage.removeItem('user_email');
                     window.location.href = '/';
                     return;
                 }
@@ -424,7 +426,9 @@
                 
                 if (data.bid > 0) {
                     document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
-                    
+
+
+    
                     // NEW PHASE 1: Display Technical Engine Data above the Chart
                     if (data.technicals) {
                         const techHtml = `
