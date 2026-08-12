@@ -850,7 +850,7 @@ def get_gold_price():
             cache_entry = app.twelve_data_cache[interval]
             
             # If the cached data is less than 60 seconds old, use it! (Prevents ban)
-            if not cache_entry["data"].empty and (current_time - cache_entry["time"]) < 30:
+            if not cache_entry["data"].empty and (current_time - cache_entry["time"]) < 60:
                 return cache_entry["data"].copy()
 
             # Otherwise, fetch fresh data
