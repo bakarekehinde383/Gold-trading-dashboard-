@@ -89,7 +89,7 @@
             </div>
         </div>
     </div>
-    
+
     <script>
         const alertBox = document.getElementById('alertBox');
         const submitBtn = document.getElementById('submitBtn');
@@ -125,6 +125,11 @@
                 const data = await response.json();
 
                 if (response.ok) {
+                    // 👇 THIS IS THE NEW FIX: Saves the email to local storage 👇
+                    if (data.email) {
+                        localStorage.setItem('user_email', data.email);
+                    }
+                    
                     showAlert(data.message || "Login successful!", "success");
                     setTimeout(() => {
                         window.location.href = data.redirect_url;
