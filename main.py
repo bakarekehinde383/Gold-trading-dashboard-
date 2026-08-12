@@ -187,7 +187,8 @@ def api_login():
     if is_admin:
         session['user_email'] = email
         session['is_admin'] = True
-        return jsonify({"message": "Admin login successful", "redirect_url": "/dashboard"}), 200
+        # NEW: Added "email": email so the frontend can save it for the dashboard
+        return jsonify({"message": "Admin login successful", "redirect_url": "/dashboard", "email": email}), 200
 
     student = Student.query.filter_by(email=email).first()
     if not student:
@@ -204,7 +205,8 @@ def api_login():
 
     session['user_email'] = email
     session['is_admin'] = False
-    return jsonify({"message": "Login successful", "redirect_url": "/dashboard"}), 200
+    # NEW: Added "email": email so the frontend can save it for the dashboard
+    return jsonify({"message": "Login successful", "redirect_url": "/dashboard", "email": email}), 200
 
 @app.route('/logout', methods=['GET', 'POST'])
 def logout():
