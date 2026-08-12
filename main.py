@@ -99,6 +99,75 @@ def send_verification_email(to_email, code):
         print(f"Failed to reach email API: {e}")
         return False
 
+
+def send_welcome_email(to_email, user_name):
+    api_key = os.environ.get("BREVO_API_KEY")
+    sender_email = os.environ.get("MAIL_USERNAME")
+    
+    if not api_key or not sender_email:
+        print("API Key or Sender Email missing in Render!")
+        return False
+        
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json"
+    }
+    
+    payload = {
+        "sender": {"name": "KFX Global", "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": "Welcome to KFX Global! 🚀",
+        "textContent": f"Hello {user_name},\n\nWelcome to KFX Global! Your email has been successfully verified and your account is secure.\n\nYou are just one step away from full access to the KFX Gold Intelligence Tool. Once your subscription is activated, you will be able to log in and view the live terminal.\n\nIf you have any questions or need assistance, simply reply to this email.\n\nWelcome to the winning team!\n\nBest regards,\nThe KFX Global Team"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code in [200, 201, 202]:
+            return True
+        else:
+            print(f"Brevo API Error (Welcome): {response.text}")
+            return False
+    except Exception as e:
+        print(f"Failed to reach email API (Welcome): {e}")
+        return False
+
+
+def send_payment_success_email(to_email, user_name):
+    api_key = os.environ.get("BREVO_API_KEY")
+    sender_email = os.environ.get("MAIL_USERNAME")
+    
+    if not api_key or not sender_email:
+        print("API Key or Sender Email missing in Render!")
+        return False
+        
+    url = "https://api.brevo.com/v3/smtp/email"
+    headers = {
+        "accept": "application/json",
+        "api-key": api_key,
+        "content-type": "application/json"
+    }
+    
+    payload = {
+        "sender": {"name": "KFX Global", "email": sender_email},
+        "to": [{"email": to_email}],
+        "subject": "Payment Successful! Access Granted 🚀",
+        "textContent": f"Hello {user_name},\n\nYour payment was successful and your premium subscription is now ACTIVE!\n\nYou now have full, unrestricted access to the KFX Gold Intelligence Tool.\n\nClick here to log in and enter the terminal:\nhttps://kfx-gold-intelligence-tool.onrender.com/\n\nWelcome to the winning team. Let's get to work!\n\nBest regards,\nThe KFX Global Team"
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code in [200, 201, 202]:
+            return True
+        else:
+            print(f"Brevo API Error (Payment): {response.text}")
+            return False
+    except Exception as e:
+        print(f"Failed to reach email API (Payment): {e}")
+        return False
+
+
 def send_reset_email(to_email, reset_link):
     api_key = os.environ.get("BREVO_API_KEY")
     sender_email = os.environ.get("MAIL_USERNAME")
