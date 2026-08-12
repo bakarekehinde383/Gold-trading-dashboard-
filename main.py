@@ -338,6 +338,9 @@ def api_verify():
         student.verification_code = None 
         db.session.commit()
         
+        # 👇 The newly added Welcome Email trigger
+        send_welcome_email(student.email, student.full_name)
+        
         try:
             tx_ref = f"KFX-{uuid.uuid4().hex[:8]}"
             sub_price = os.environ.get("KFX_SUB_PRICE", "150000")
@@ -360,6 +363,7 @@ def api_verify():
             return jsonify({"error": "Verified, but gateway failed."}), 500
             
     return jsonify({"error": "Invalid verification code."}), 400
+
 
 @app.route('/api/forgot-password', methods=['POST'])
 def api_forgot_password():
@@ -422,6 +426,9 @@ def flutterwave_webhook():
         if event_type == "charge.completed" and data.get("status") == "successful":
             student.has_active_sub = True
             db.session.commit()
+            
+            # 👇 The newly added Access Granted Email trigger
+            send_payment_success_email(student.email, student.full_name)
             
         # Turn OFF access if they cancel or their billing expires
         elif event_type == "subscription.cancelled":
