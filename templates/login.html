@@ -98,8 +98,7 @@
             </div>
         </div>
     </div>
-
-    <script>
+<script>
         const alertBox = document.getElementById('alertBox');
         const submitBtn = document.getElementById('submitBtn');
         const emailInput = document.getElementById('email');
@@ -134,7 +133,7 @@
                 const data = await response.json();
 
                 if (response.ok) {
-                    // 👇 THIS IS THE NEW FIX: Saves the email to local storage 👇
+                    // Saves the email to local storage
                     if (data.email) {
                         localStorage.setItem('user_email', data.email);
                     }
@@ -145,6 +144,18 @@
                     }, 1000);
                 } else {
                     showAlert(data.error || "System error verifying access. Try again.");
+                    
+                    // 👇 THIS IS THE NEW FIX: Auto-Redirect for Inactive Subscriptions 👇
+                    if (data.error && data.error.toLowerCase().includes("subscription inactive")) {
+                        submitBtn.innerText = "REDIRECTING TO RENEWAL...";
+                        setTimeout(() => {
+                            // ⚠️ REPLACE THE LINK BELOW WITH YOUR ACTUAL PAYMENT LINK ⚠️
+                            window.location.href = "https://your-payment-link-here.com"; 
+                        }, 1500); // Waits 1.5 seconds so the user can read the red error text
+                        return; // Stops the rest of the code from running
+                    }
+                    // 👆 END OF NEW FIX 👆
+
                     submitBtn.disabled = false;
                     submitBtn.innerText = "ENTER PORTAL";
                     
@@ -176,6 +187,6 @@
                 icon.innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />';
             }
         }
-    </script>
+</script>
 </body>
 </html>
