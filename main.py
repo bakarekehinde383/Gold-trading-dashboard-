@@ -242,6 +242,9 @@ def serve_dashboard():
 # =========================================================
 # 5. AUTHENTICATION, REGISTRATION & RESET
 # =========================================================
+@app.route('/login.html')
+def login_page():
+    return render_template('login.html')
 
 @app.route('/api/login', methods=['POST'])
 def api_login():
