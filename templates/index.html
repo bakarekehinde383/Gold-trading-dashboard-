@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,7 +7,6 @@
     <title>KFX Gold Intelligence Tool</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://checkout.flutterwave.com/v3.js"></script>
     <style>
         body {
             background-color: #030712;
@@ -21,34 +21,6 @@
     </style>
 </head>
 <body class="text-slate-400 font-mono p-4 min-h-screen text-xs selection:bg-red-900 selection:text-white relative">
-
-    <div id="auth-modal" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50 hidden">
-        <div class="bg-slate-900 border border-slate-700 p-8 rounded-lg max-w-md w-full text-center shadow-2xl mx-4">
-            <h2 class="text-2xl font-bold text-yellow-500 mb-4" id="modal-title">KFX Gold Intelligence</h2>
-            <p class="text-slate-300 mb-6 text-sm" id="modal-message">Please enter your email to access the live dashboard.</p>
-            
-            <div id="login-form">
-                <input type="email" id="user-email-input" placeholder="Enter your email address" 
-                       class="w-full p-3 rounded bg-slate-800 text-white border border-slate-600 mb-4 focus:outline-none focus:border-yellow-500 text-sm">
-                <button onclick="loginUser()" class="w-full bg-yellow-600 hover:bg-yellow-500 text-white font-bold py-3 rounded transition-colors text-sm">
-                    Access Dashboard
-                </button>
-            </div>
-
-            <div id="payment-form" class="hidden">
-                <button onclick="initiateFlutterwaveCheckout()" id="pay-btn"
-                   class="block w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded transition-colors mb-4 text-sm">
-                    Subscribe (Loading price...)
-                </button>
-                <p id="pay-loading" class="hidden text-yellow-500 text-xs mb-4 font-bold animate-pulse">
-                    Generating secure checkout link...
-                </p>
-                <button onclick="resetModal()" class="text-slate-400 hover:text-white underline text-xs">
-                    I already paid, let me enter my email again
-                </button>
-            </div>
-        </div>
-    </div>
 
     <audio id="alertSound" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
 
@@ -406,11 +378,11 @@
         let fetchInterval;
 
         async function fetchGoldData() {
-            // Check for user email and show login modal instead of refreshing if missing
+            // 1. Check for user email - redirect to login.html if missing
             const userEmail = localStorage.getItem('user_email');
             
             if (!userEmail) {
-                document.getElementById('auth-modal').classList.remove('hidden');
+                window.location.href = 'login.html';
                 return;
             }
 
@@ -419,10 +391,10 @@
                     headers: { 'Authorization': userEmail }
                 });
 
-                // Show login modal instead of refreshing if unauthorized
+                // 2. Redirect to login.html instead of refreshing if unauthorized
                 if (response.status === 401 || response.status === 403) {
                     localStorage.removeItem('user_email');
-                    document.getElementById('auth-modal').classList.remove('hidden');
+                    window.location.href = 'login.html';
                     return;
                 }
 
@@ -577,11 +549,11 @@
 
         // UPDATED LOG OUT FUNCTION
         async function handleLogout() {
-            // Clear the saved email
+            // 1. Clear the saved email
             localStorage.removeItem('user_email');
             localStorage.clear();
             
-            // Tell the backend
+            // 2. Tell the backend to end the session
             try {
                 await fetch('/api/logout', { 
                     method: 'POST',
@@ -591,14 +563,14 @@
                 console.log("Local logout complete.");
             }
             
-            // Pop the login modal back up on the screen
-            document.getElementById('auth-modal').classList.remove('hidden');
-            
-            // Stop the live data feed so it doesn't keep running in the background
+            // 3. Stop the live data feed so it doesn't keep running in the background
             if (fetchInterval) {
                 clearInterval(fetchInterval);
                 fetchInterval = null; 
             }
+
+            // 4. Send them straight to your login.html page!
+            window.location.href = 'login.html';
         }
         
     </script>
