@@ -65,6 +65,10 @@
                 <span class="text-slate-400">LIVE</span>
                 <span id="gmt-clock" class="text-white font-bold ml-2 tracking-widest">00:00:00 GMT</span>
             </div>
+            <button onclick="handleLogout()" 
+                    class="bg-[#1e293b] hover:bg-red-500/10 text-slate-400 hover:text-red-400 border border-slate-700/50 hover:border-red-500/50 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded transition-all shadow-sm ml-2">
+                Log Out
+            </button>
         </div>
     </header>
 
@@ -399,7 +403,7 @@
             });
         }
 
-  let fetchInterval;
+        let fetchInterval;
 
         async function fetchGoldData() {
             // FIX 1: Changed 'kfx_email' to 'user_email' to match the login page!
@@ -427,8 +431,6 @@
                 if (data.bid > 0) {
                     document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
 
-
-    
                     // NEW PHASE 1: Display Technical Engine Data above the Chart
                     if (data.technicals) {
                         const techHtml = `
@@ -575,10 +577,26 @@
 
         fetchGoldData();
         if (!fetchInterval) fetchInterval = setInterval(fetchGoldData, 60000); 
+
+        // LOG OUT FUNCTION ADDED HERE
+        async function handleLogout() {
+            localStorage.removeItem('user_email');
+            localStorage.clear();
+            
+            try {
+                await fetch('/api/logout', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            } catch (err) {
+                console.log("Local logout complete.");
+            }
+            
+            window.location.href = '/'; 
+        }
         
     </script>
 </body>
 </html>
-
 
 
