@@ -406,11 +406,11 @@
         let fetchInterval;
 
         async function fetchGoldData() {
-            // FIX 1: Changed 'kfx_email' to 'user_email' to match the login page!
+            // Check for user email and show login modal instead of refreshing if missing
             const userEmail = localStorage.getItem('user_email');
             
             if (!userEmail) {
-                window.location.href = '/';
+                document.getElementById('auth-modal').classList.remove('hidden');
                 return;
             }
 
@@ -419,10 +419,10 @@
                     headers: { 'Authorization': userEmail }
                 });
 
+                // Show login modal instead of refreshing if unauthorized
                 if (response.status === 401 || response.status === 403) {
-                    // FIX 2: Changed 'kfx_email' to 'user_email' so it clears properly on logout
                     localStorage.removeItem('user_email');
-                    window.location.href = '/';
+                    document.getElementById('auth-modal').classList.remove('hidden');
                     return;
                 }
 
@@ -431,7 +431,6 @@
                 if (data.bid > 0) {
                     document.getElementById('gold-price').innerText = `$${data.bid.toFixed(2)}`;
 
-                    // NEW PHASE 1: Display Technical Engine Data above the Chart
                     if (data.technicals) {
                         const techHtml = `
                             <span class="text-[9px] border border-slate-700 text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded uppercase font-bold">RSI (14): ${data.technicals.rsi}</span>
@@ -442,7 +441,6 @@
                         document.getElementById('technical-summary').innerHTML = techHtml;
                     }
 
-                    // NEW PHASE 1: Prioritize updated root DXY & TNX from backend
                     const currentDxy = data.dxy !== undefined ? data.dxy : (data.macro ? data.macro.dxy : 0);
                     const currentUs10y = data.tnx !== undefined ? data.tnx : (data.macro ? data.macro.us10y : 0);
 
@@ -470,7 +468,6 @@
                     document.getElementById('macro-bull-bar').style.width = `${normalizedBull}%`;
                     document.getElementById('macro-bear-bar').style.width = `${100 - normalizedBull}%`;
 
-                    // Update Invalidation Status
                     const yieldInv = document.getElementById('invalidation-yield-status');
                     if (currentUs10y >= 2.00) {
                         yieldInv.innerText = "TRIGGERED";
@@ -578,11 +575,13 @@
         fetchGoldData();
         if (!fetchInterval) fetchInterval = setInterval(fetchGoldData, 60000); 
 
-        // LOG OUT FUNCTION ADDED HERE
+        // UPDATED LOG OUT FUNCTION
         async function handleLogout() {
+            // Clear the saved email
             localStorage.removeItem('user_email');
             localStorage.clear();
             
+            // Tell the backend
             try {
                 await fetch('/api/logout', { 
                     method: 'POST',
@@ -592,11 +591,17 @@
                 console.log("Local logout complete.");
             }
             
-            window.location.href = '/'; 
+            // Pop the login modal back up on the screen
+            document.getElementById('auth-modal').classList.remove('hidden');
+            
+            // Stop the live data feed so it doesn't keep running in the background
+            if (fetchInterval) {
+                clearInterval(fetchInterval);
+                fetchInterval = null; 
+            }
         }
         
     </script>
 </body>
 </html>
-
 
