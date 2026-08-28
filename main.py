@@ -1,3 +1,4 @@
+imports APScheduler
 import requests
 import pandas as pd
 import time
@@ -763,211 +764,79 @@ from datetime import datetime, timezone
 import requests
 import pandas as pd
 
-# ---------------------------------------------------------
-# ROUTE 4: GATED API ENDPOINT (GOLD DATA)
-# ---------------------------------------------------------
-@app.route('/api/gold')
-def get_gold_price():
-    # 1. Access Authentication & Authorization Check
-    user_email = session.get('user_email') or request.headers.get('Authorization')
+from apscheduler.schedulers.background import BackgroundScheduler
+
+# Global memory store for instant delivery
+GLOBAL_GOLD_CACHE = None
+
+# =========================================================
+# BACKGROUND WORKER (Runs every 60 seconds)
+# =========================================================
+def update_gold_cache():
+    global GLOBAL_GOLD_CACHE
+    print("🔄 Running Background Gold Data Fetch (Every 60s)...")
     
-    if not user_email:
-        return jsonify({"error": "Unauthorized. Please enter your email."}), 401
- 
-    clean_email = user_email.strip().lower()
- 
-    # Admin Bypass Check
-    if clean_email == "bakarekehinde383@gmail.com" or (ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower()):
-        pass  # Admin granted full access
-    else:
-        # Student Subscription Verification
-        student = Student.query.filter_by(email=clean_email).first()
-        if not student or not student.has_active_sub:
-            return jsonify({
-                "error": "Subscription expired or inactive.",
-                "status": "PAYMENT_REQUIRED"
-            }), 403
- 
-    # =========================================================
-    # WEEKEND LOCKDOWN CHECK (Pre-empts market math errors)
-    # =========================================================
-    now_utc = datetime.now(timezone.utc)
-    current_day = now_utc.weekday()  # 5 = Saturday, 6 = Sunday
- 
-    macro = get_macro_data()
-    news = get_news_data()
-    session_data = get_killzone()
- 
-    # Lock down on Saturday or Sunday before market open (21:00 UTC)
-    if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
-        return jsonify({
-            "bid": "CLOSED",
-            "dxy": macro.get('dxy', 0.0),
-            "tnx": macro.get('us10y', 0.0),
-            "bull_flow": 50.0,
-            "bear_flow": 50.0,
-            "multi_flow": {
-                "h4": {"bull": 50.0, "bear": 50.0},
-                "fast": {"bull": 50.0, "bear": 50.0}
-            },
-            "posture": {
-                "score": 0,
-                "bias": "MARKET CLOSED",
-                "action": "SYSTEM LOCKDOWN: WEEKEND",
-                "narrative": "Global markets are currently closed. The KFX Intelligence Engine will resume real-time analysis at the Sunday market open.",
-                "ladder_state": "OBSERVE",
-                "color": "text-slate-500"
-            },
-            "macro": macro,
-            "session": {"name": "WEEKEND CLOSE", "active": False},
-            "radar_data": [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0],
-            "news": news,
-            "technicals": {
-                "rsi": "-",
-                "ema50": "-",
-                "ema200": "-",
-                "bias": "CLOSED"
-            }
-        })
-
-    # =========================================================
-    # 2. Main Gold Engine Calculations
-    # =========================================================
     symbol = "XAUUSD"
+    TWELVE_DATA_API_KEY = "b48758c67cbf475eb87bbc197505060a"
+    
     try:
-        # =========================================================
-        # PREMIUM XAUUSD SPOT DATA FETCH (TWELVE DATA)
-        # =========================================================
-        TWELVE_DATA_API_KEY = "b48758c67cbf475eb87bbc197505060a"
-        
-        # Cache initialization to respect API rate limits
-        if not hasattr(app, 'twelve_data_cache'):
-            app.twelve_data_cache = {
-                "1day": {"time": 0, "data": pd.DataFrame()},
-                "1h": {"time": 0, "data": pd.DataFrame()},
-                "15min": {"time": 0, "data": pd.DataFrame()}
-            }
-            
-        def fetch_twelve_data(interval, outputsize):
-            import time
-            current_time = time.time()
-            cache_entry = app.twelve_data_cache[interval]
-            
-            # If the cached data is less than 60 seconds old, use it!
-            if not cache_entry["data"].empty and (current_time - cache_entry["time"]) < 60:
-                return cache_entry["data"].copy()
+        # Fetch Macro & News
+        macro = get_macro_data()
+        news = get_news_data()
+        session_data = get_killzone()
 
+        def fetch_twelve_data(interval, outputsize):
             url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_API_KEY}"
-            
             try:
-                response = requests.get(url).json()
-                
+                response = requests.get(url, timeout=10).json()
                 if 'values' not in response:
                     print(f"Twelve Data Limit Hit or Error: {response}")
-                    return cache_entry["data"].copy()
-                    
+                    return pd.DataFrame()
+                
                 df = pd.DataFrame(response['values'])
                 df = df.iloc[::-1]
                 df[['open', 'high', 'low', 'close']] = df[['open', 'high', 'low', 'close']].astype(float)
-                if 'volume' not in df.columns:
-                    df['volume'] = 0.0
-                else:
-                    df['volume'] = df['volume'].astype(float)
-                    
+                df['volume'] = df['volume'].astype(float) if 'volume' in df.columns else 0.0
                 df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
-                
-                app.twelve_data_cache[interval] = {"time": current_time, "data": df.copy()}
                 return df
-                
             except Exception as e:
                 print(f"Twelve Data Fetch Error: {e}")
-                return cache_entry["data"].copy()
+                return pd.DataFrame()
 
-        # Fetch timeframes via cache
         rates_d1 = fetch_twelve_data(interval="1day", outputsize=30)
         rates_h1 = fetch_twelve_data(interval="1h", outputsize=250)
         rates_m15 = fetch_twelve_data(interval="15min", outputsize=200)
 
-        # =========================================================
-        # FAILSAFE: PREVENT DASHBOARD CRASHES ON API RATE LIMITS
-        # =========================================================
+        # Failsafe if API fails
         if rates_h1.empty or rates_d1.empty:
-            print("API Warning: No price data returned from Twelve Data. Triggering Failsafe Memory...")
-            
-            if hasattr(app, 'last_known_gold_payload'):
-                return jsonify(app.last_known_gold_payload), 200
-            
-            fallback_price = getattr(app, 'last_known_gold_price', 2650.00)
-            return jsonify({
-                "symbol": symbol,
-                "bid": round(fallback_price, 2),
-                "dxy": round(float(macro.get('dxy', 100.0)), 2),
-                "tnx": round(float(macro.get('us10y', 4.0)), 3),
-                "bull_flow": 50.0,
-                "bear_flow": 50.0,
-                "multi_flow": {
-                    "h4": {"bull": 50.0, "bear": 50.0},
-                    "h2": {"bull": 50.0, "bear": 50.0},
-                    "fast": {"bull": 50.0, "bear": 50.0}
-                },
-                "posture": {
-                    "score": 50,
-                    "bias": "PAUSED",
-                    "action": "API RATE LIMITED - RETRYING",
-                    "narrative": "Data stream temporarily rate-limited. Displaying last valid snapshot.",
-                    "ladder_state": "OBSERVE",
-                    "color": "text-amber-500"
-                },
-                "macro": macro,
-                "session": session_data,
-                "radar_data": [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0],
-                "news": news,
-                "technicals": {
-                    "rsi": 50.0,
-                    "ema50": round(fallback_price, 2),
-                    "ema200": round(fallback_price, 2),
-                    "bias": "NEUTRAL"
-                }
-            }), 200
+            print("⚠️ Twelve Data unavailable. Retaining last valid cache.")
+            return
 
         current_price = float(rates_h1['Close'].iloc[-1])
-        app.last_known_gold_price = current_price
         today_d1 = rates_d1.iloc[-1]
- 
+
         d1_range = float(today_d1['High'] - today_d1['Low'])
         adr_14 = float((rates_d1['High'] - rates_d1['Low']).tail(14).mean())
-        volatility_score = 50 if adr_14 == 0 else max(0, min(100, (d1_range / adr_14) * 50))
- 
+        
         if not rates_h1.empty:
             recent_high = float(rates_h1['High'].tail(14).max())
             recent_low = float(rates_h1['Low'].tail(14).min())
             price_range_1h = recent_high - recent_low
         else:
             price_range_1h = 10.0
- 
-        if len(rates_h1) >= 14:
-            current_h1_vol = float(rates_h1['Volume'].iloc[-1])
-            avg_h1_vol = float(rates_h1['Volume'].tail(14).mean())
-            rel_volume = (current_h1_vol / avg_h1_vol) if avg_h1_vol > 0 else 1.0
-        else:
-            rel_volume = 1.0
- 
+
         h4_data = calculate_flow_yf(rates_h1.tail(16))
         h1_data = calculate_flow_yf(rates_h1.tail(4))
         m15_data = calculate_flow_yf(rates_m15.tail(4))
- 
+
         fast_bull = round((h1_data["bull"] + m15_data["bull"]) / 2, 1)
         fast_bear = round(100.0 - fast_bull, 1)
         fast_flow_data = {"bull": fast_bull, "bear": fast_bear}
- 
-        # =========================================================
-        # TECHNICAL INDICATORS & INTRADAY SCORING ENGINE
-        # =========================================================
+
         close_prices = rates_h1['Close']
-        
         span_50 = min(50, len(close_prices))
         span_200 = min(200, len(close_prices))
-        
+
         ema_50 = float(close_prices.ewm(span=span_50, adjust=False).mean().iloc[-1])
         ema_200 = float(close_prices.ewm(span=span_200, adjust=False).mean().iloc[-1])
 
@@ -985,91 +854,46 @@ def get_gold_price():
             tech_bias = "NEUTRAL"
 
         score = 50.0
-
-        if tech_bias == "BULLISH":
-            score += 12.0
-        elif tech_bias == "BEARISH":
-            score -= 12.0
+        if tech_bias == "BULLISH": score += 12.0
+        elif tech_bias == "BEARISH": score -= 12.0
 
         tape_edge = (fast_bull - 50.0) * 0.40
         score += tape_edge
 
         us10y_val = macro.get('us10y', 0.0)
         dxy_val = macro.get('dxy', 0.0)
-        if us10y_val < 4.20 and dxy_val < 104.50:
-            score += 5.0
-        elif us10y_val > 4.50 or dxy_val > 105.50:
-            score -= 5.0
+        if us10y_val < 4.20 and dxy_val < 104.50: score += 5.0
+        elif us10y_val > 4.50 or dxy_val > 105.50: score -= 5.0
 
-        if rsi_14 > 75:
-            score = min(score, 57.0)
-        elif rsi_14 < 25:
-            score = max(score, 43.0)
+        if rsi_14 > 75: score = min(score, 57.0)
+        elif rsi_14 < 25: score = max(score, 43.0)
 
         total_score = int(max(0, min(100, round(score))))
 
-        # =========================================================
-        # THE LADDER
-        # =========================================================
         if rsi_14 > 75:
-            action = "MANAGE: BULLISH EXHAUSTION - TRAIL STOPS"
-            ladder = "MANAGE"
-            color = "text-yellow-400"
-            bias = "EXHAUSTED BULLISH"
-            narrative = "RSI > 75 indicating overbought conditions. Lock in partial profits or tighten trailing stops."
-            
+            action, ladder, color, bias = "MANAGE: BULLISH EXHAUSTION", "MANAGE", "text-yellow-400", "EXHAUSTED BULLISH"
+            narrative = "RSI > 75 indicating overbought conditions. Lock in partial profits."
         elif rsi_14 < 25:
-            action = "MANAGE: BEARISH EXHAUSTION - COVER/SCALE OUT"
-            ladder = "MANAGE"
-            color = "text-yellow-400"
-            bias = "EXHAUSTED BEARISH"
+            action, ladder, color, bias = "MANAGE: BEARISH EXHAUSTION", "MANAGE", "text-yellow-400", "EXHAUSTED BEARISH"
             narrative = "RSI < 25 indicating oversold extension. High probability of mean-reversion move."
-
         elif total_score >= 58:
-            action = "ACT: HEAVY BULLISH FLOW - EXECUTE LONG"
-            ladder = "ACT"
-            color = "text-emerald-400"
-            bias = "BULLISH"
+            action, ladder, color, bias = "ACT: HEAVY BULLISH FLOW - EXECUTE LONG", "ACT", "text-emerald-400", "BULLISH"
             narrative = "Intraday tape and technicals align for long execution. Enter on 15m pullback."
-            
         elif total_score >= 53:
-            action = "PREPARE: BUYERS ACCUMULATING"
-            ladder = "PREPARE"
-            color = "text-orange-400"
-            bias = "LEANING BULLISH"
+            action, ladder, color, bias = "PREPARE: BUYERS ACCUMULATING", "PREPARE", "text-orange-400", "LEANING BULLISH"
             narrative = "Bullish momentum building. Wait for 15m tape confirmation."
-            
         elif total_score <= 42:
-            action = "ACT: HEAVY BEARISH FLOW - EXECUTE SHORT"
-            ladder = "ACT"
-            color = "text-red-400"
-            bias = "BEARISH"
-            narrative = "Intraday sellers dominate tape. Technicals align for short execution. Sell rallies."
-            
+            action, ladder, color, bias = "ACT: HEAVY BEARISH FLOW - EXECUTE SHORT", "ACT", "text-red-400", "BEARISH"
+            narrative = "Intraday sellers dominate tape. Technicals align for short execution."
         elif total_score <= 47:
-            action = "PREPARE: SELLERS ACCUMULATING"
-            ladder = "PREPARE"
-            color = "text-orange-400"
-            bias = "LEANING BEARISH"
+            action, ladder, color, bias = "PREPARE: SELLERS ACCUMULATING", "PREPARE", "text-orange-400", "LEANING BEARISH"
             narrative = "Bearish momentum building. Wait for 15m breakdown."
-            
         else:
-            action = "OBSERVE: NEUTRAL RANGE"
-            ladder = "OBSERVE"
-            color = "text-slate-400"
-            bias = "NEUTRAL"
+            action, ladder, color, bias = "OBSERVE: NEUTRAL RANGE", "OBSERVE", "text-slate-400", "NEUTRAL"
             narrative = "Synthesis score balanced inside session. Stand aside and protect capital."
 
-        posture = {
-            "score": total_score,
-            "bias": bias,
-            "action": action,
-            "narrative": narrative,
-            "ladder_state": ladder,
-            "color": color
-        }
+        posture = {"score": total_score, "bias": bias, "action": action, "narrative": narrative, "ladder_state": ladder, "color": color}
 
-        # 8-Factor Radar Factors
         score_yield = get_score(us10y_val, 3.0, 5.5, inverse=True)
         score_curve = get_score(macro.get('yield_curve', 0), -1.0, 1.0, inverse=True)
         score_vix = get_score(macro.get('vix', 0), 12.0, 35.0, inverse=False)
@@ -1081,17 +905,11 @@ def get_gold_price():
         score_macro_edge = (score_yield + score_curve + score_vix + score_dxy) / 4.0
 
         synthesis_8_factors = [
-            round(score_yield, 1),
-            round(score_curve, 1),
-            round(score_vix, 1),
-            round(score_dxy, 1),
-            round(score_4h, 1),
-            round(score_fast, 1),
-            round(score_range, 1),
-            round(score_macro_edge, 1)
+            round(score_yield, 1), round(score_curve, 1), round(score_vix, 1), round(score_dxy, 1),
+            round(score_4h, 1), round(score_fast, 1), round(score_range, 1), round(score_macro_edge, 1)
         ]
 
-        payload = {
+        GLOBAL_GOLD_CACHE = {
             "symbol": symbol,
             "bid": round(current_price, 2),
             "dxy": round(float(dxy_val), 2),
@@ -1115,22 +933,71 @@ def get_gold_price():
                 "bias": tech_bias
             }
         }
-
-        # Cache valid payload in server memory
-        app.last_known_gold_payload = payload
-
-        return jsonify(payload), 200
+        print("✅ Background Gold Data Cache Successfully Updated!")
 
     except Exception as e:
-        print(f"Error in /api/gold: {e}")
-        
-        if hasattr(app, 'last_known_gold_payload'):
-            return jsonify(app.last_known_gold_payload), 200
-            
+        print(f"❌ Background worker error: {e}")
+
+# Start APScheduler (Every 60 seconds)
+scheduler = BackgroundScheduler(daemon=True)
+scheduler.add_job(func=update_gold_cache, trigger="interval", seconds=60)
+scheduler.start()
+
+# Initial fetch on startup
+update_gold_cache()
+
+
+# ---------------------------------------------------------
+# ROUTE 4: GATED API ENDPOINT (GOLD DATA)
+# ---------------------------------------------------------
+@app.route('/api/gold')
+def get_gold_price():
+    user_email = session.get('user_email') or request.headers.get('Authorization')
+    if not user_email:
+        return jsonify({"error": "Unauthorized. Please enter your email."}), 401
+ 
+    clean_email = user_email.strip().lower()
+    if clean_email == "bakarekehinde383@gmail.com" or (ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower()):
+        pass
+    else:
+        student = Student.query.filter_by(email=clean_email).first()
+        if not student or not student.has_active_sub:
+            return jsonify({"error": "Subscription expired or inactive.", "status": "PAYMENT_REQUIRED"}), 403
+
+    now_utc = datetime.now(timezone.utc)
+    current_day = now_utc.weekday()
+    macro = get_macro_data()
+    news = get_news_data()
+
+    if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
         return jsonify({
-            "error": f"Internal engine calculation error: {e}", 
-            "bid": getattr(app, 'last_known_gold_price', 0.00)
-        }), 500
+            "bid": "CLOSED",
+            "dxy": macro.get('dxy', 0.0),
+            "tnx": macro.get('us10y', 0.0),
+            "bull_flow": 50.0,
+            "bear_flow": 50.0,
+            "multi_flow": {"h4": {"bull": 50.0, "bear": 50.0}, "fast": {"bull": 50.0, "bear": 50.0}},
+            "posture": {
+                "score": 0, "bias": "MARKET CLOSED", "action": "SYSTEM LOCKDOWN: WEEKEND",
+                "narrative": "Global markets are currently closed. The KFX Engine will resume at Sunday open.",
+                "ladder_state": "OBSERVE", "color": "text-slate-500"
+            },
+            "macro": macro, "session": {"name": "WEEKEND CLOSE", "active": False},
+            "radar_data": [50.0]*8, "news": news,
+            "technicals": {"rsi": "-", "ema50": "-", "ema200": "-", "bias": "CLOSED"}
+        })
+
+    # Serve instant global cache
+    if GLOBAL_GOLD_CACHE:
+        return jsonify(GLOBAL_GOLD_CACHE), 200
+
+    return jsonify({
+        "symbol": "XAUUSD", "bid": 2650.00, "dxy": 100.0, "tnx": 4.0,
+        "bull_flow": 50.0, "bear_flow": 50.0,
+        "posture": {"score": 50, "bias": "INITIALIZING", "action": "FETCHING FRESH SNAPSHOT", "narrative": "Engine warming up.", "ladder_state": "OBSERVE", "color": "text-amber-500"},
+        "macro": macro, "session": get_killzone(), "radar_data": [50.0]*8, "news": news,
+        "technicals": {"rsi": 50.0, "ema50": 2650.0, "ema200": 2650.0, "bias": "NEUTRAL"}
+    }), 200
 
 
 if __name__ == '__main__':
