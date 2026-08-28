@@ -769,7 +769,9 @@ import pandas as pd
 @app.route('/api/gold')
 def get_gold_price():
     # 1. Access Authentication & Authorization Check
-    user_email = request.headers.get('Authorization')
+    # UPDATED: Now checks your Flask login session first!
+    user_email = session.get('user_email') or request.headers.get('Authorization')
+    
     if not user_email:
         return jsonify({"error": "Unauthorized. Please enter your email."}), 401
  
@@ -795,7 +797,7 @@ def get_gold_price():
  
     macro = get_macro_data()
     news = get_news_data()
-    session = get_killzone()
+    session_data = get_killzone() # renamed to avoid conflict with Flask's 'session'
  
     # Lock down on Saturday or Sunday before market open (21:00 UTC)
     if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
@@ -883,6 +885,7 @@ def get_gold_price():
             except Exception as e:
                 print(f"Twelve Data Fetch Error: {e}")
                 return cache_entry["data"].copy()
+
 
         # Fetch our timeframes (This now goes through the cache!)
         rates_d1 = fetch_twelve_data(interval="1day", outputsize=30)
