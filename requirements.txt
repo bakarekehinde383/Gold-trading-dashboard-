@@ -7,3 +7,4 @@ Flask-SQLAlchemy==3.0.5
 requests
 pandas
 psycopg2-binary
+apscheduler
