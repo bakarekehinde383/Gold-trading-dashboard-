@@ -769,7 +769,6 @@ import pandas as pd
 @app.route('/api/gold')
 def get_gold_price():
     # 1. Access Authentication & Authorization Check
-    # UPDATED: Now checks your Flask login session first!
     user_email = session.get('user_email') or request.headers.get('Authorization')
     
     if not user_email:
@@ -797,7 +796,7 @@ def get_gold_price():
  
     macro = get_macro_data()
     news = get_news_data()
-    session_data = get_killzone() # renamed to avoid conflict with Flask's 'session'
+    session_data = get_killzone()
  
     # Lock down on Saturday or Sunday before market open (21:00 UTC)
     if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
@@ -841,7 +840,7 @@ def get_gold_price():
         # =========================================================
         TWELVE_DATA_API_KEY = "b48758c67cbf475eb87bbc197505060a"
         
-        # We need a cache because Twelve Data Free Tier only allows 8 requests per minute!
+        # Cache initialization to respect API rate limits
         if not hasattr(app, 'twelve_data_cache'):
             app.twelve_data_cache = {
                 "1day": {"time": 0, "data": pd.DataFrame()},
@@ -854,11 +853,10 @@ def get_gold_price():
             current_time = time.time()
             cache_entry = app.twelve_data_cache[interval]
             
-            # If the cached data is less than 60 seconds old, use it! (Prevents ban)
+            # If the cached data is less than 60 seconds old, use it!
             if not cache_entry["data"].empty and (current_time - cache_entry["time"]) < 60:
                 return cache_entry["data"].copy()
 
-            # Otherwise, fetch fresh data
             url = f"https://api.twelvedata.com/time_series?symbol=XAU/USD&interval={interval}&outputsize={outputsize}&apikey={TWELVE_DATA_API_KEY}"
             
             try:
@@ -866,7 +864,7 @@ def get_gold_price():
                 
                 if 'values' not in response:
                     print(f"Twelve Data Limit Hit or Error: {response}")
-                    return cache_entry["data"].copy() # Fallback to old data if limit hit
+                    return cache_entry["data"].copy()
                     
                 df = pd.DataFrame(response['values'])
                 df = df.iloc[::-1]
@@ -878,7 +876,6 @@ def get_gold_price():
                     
                 df.rename(columns={'open': 'Open', 'high': 'High', 'low': 'Low', 'close': 'Close', 'volume': 'Volume'}, inplace=True)
                 
-                # Update Cache
                 app.twelve_data_cache[interval] = {"time": current_time, "data": df.copy()}
                 return df
                 
@@ -886,28 +883,55 @@ def get_gold_price():
                 print(f"Twelve Data Fetch Error: {e}")
                 return cache_entry["data"].copy()
 
-
-        # Fetch our timeframes (This now goes through the cache!)
+        # Fetch timeframes via cache
         rates_d1 = fetch_twelve_data(interval="1day", outputsize=30)
         rates_h1 = fetch_twelve_data(interval="1h", outputsize=250)
         rates_m15 = fetch_twelve_data(interval="15min", outputsize=200)
 
-
+        # =========================================================
+        # FAILSAFE: PREVENT DASHBOARD CRASHES ON API RATE LIMITS
+        # =========================================================
         if rates_h1.empty or rates_d1.empty:
-            print("API Warning: No price data returned from Twelve Data.")
+            print("API Warning: No price data returned from Twelve Data. Triggering Failsafe Memory...")
+            
+            if hasattr(app, 'last_known_gold_payload'):
+                return jsonify(app.last_known_gold_payload), 200
+            
+            fallback_price = getattr(app, 'last_known_gold_price', 2650.00)
             return jsonify({
-                "bid": "FETCH ERROR",
-                "dxy": macro.get('dxy', 0.0),
-                "tnx": macro.get('us10y', 0.0),
+                "symbol": symbol,
+                "bid": round(fallback_price, 2),
+                "dxy": round(float(macro.get('dxy', 100.0)), 2),
+                "tnx": round(float(macro.get('us10y', 4.0)), 3),
+                "bull_flow": 50.0,
+                "bear_flow": 50.0,
+                "multi_flow": {
+                    "h4": {"bull": 50.0, "bear": 50.0},
+                    "h2": {"bull": 50.0, "bear": 50.0},
+                    "fast": {"bull": 50.0, "bear": 50.0}
+                },
                 "posture": {
-                    "bias": "DATA ERROR",
-                    "action": "RETRYING API...",
+                    "score": 50,
+                    "bias": "PAUSED",
+                    "action": "API RATE LIMITED - RETRYING",
+                    "narrative": "Data stream temporarily rate-limited. Displaying last valid snapshot.",
+                    "ladder_state": "OBSERVE",
                     "color": "text-amber-500"
                 },
-                "macro": macro
+                "macro": macro,
+                "session": session_data,
+                "radar_data": [50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0, 50.0],
+                "news": news,
+                "technicals": {
+                    "rsi": 50.0,
+                    "ema50": round(fallback_price, 2),
+                    "ema200": round(fallback_price, 2),
+                    "bias": "NEUTRAL"
+                }
             }), 200
- 
+
         current_price = float(rates_h1['Close'].iloc[-1])
+        app.last_known_gold_price = current_price
         today_d1 = rates_d1.iloc[-1]
  
         d1_range = float(today_d1['High'] - today_d1['Low'])
@@ -977,7 +1001,6 @@ def get_gold_price():
         elif us10y_val > 4.50 or dxy_val > 105.50:
             score -= 5.0
 
-        # YOUR ORIGINAL MATH IS KEPT EXACTLY THE SAME HERE
         if rsi_14 > 75:
             score = min(score, 57.0)
         elif rsi_14 < 25:
@@ -986,10 +1009,8 @@ def get_gold_price():
         total_score = int(max(0, min(100, round(score))))
 
         # =========================================================
-        # THE LADDER (WHERE THE MANAGE EXIT IS ADDED)
+        # THE LADDER
         # =========================================================
-        
-        # 1. First, we check if your engine flagged exhaustion (Exit Trade)
         if rsi_14 > 75:
             action = "MANAGE: BULLISH EXHAUSTION - TRAIL STOPS"
             ladder = "MANAGE"
@@ -1004,7 +1025,6 @@ def get_gold_price():
             bias = "EXHAUSTED BEARISH"
             narrative = "RSI < 25 indicating oversold extension. High probability of mean-reversion move."
 
-        # 2. If no exhaustion, we proceed with your exact original logic
         elif total_score >= 58:
             action = "ACT: HEAVY BULLISH FLOW - EXECUTE LONG"
             ladder = "ACT"
@@ -1049,8 +1069,6 @@ def get_gold_price():
             "color": color
         }
 
-        
-
         # 8-Factor Radar Factors
         score_yield = get_score(us10y_val, 3.0, 5.5, inverse=True)
         score_curve = get_score(macro.get('yield_curve', 0), -1.0, 1.0, inverse=True)
@@ -1073,8 +1091,7 @@ def get_gold_price():
             round(score_macro_edge, 1)
         ]
 
-        # Single Unified Payload Construction
-        return jsonify({
+        payload = {
             "symbol": symbol,
             "bid": round(current_price, 2),
             "dxy": round(float(dxy_val), 2),
@@ -1088,7 +1105,7 @@ def get_gold_price():
             },
             "posture": posture,
             "macro": macro,
-            "session": session,
+            "session": session_data,
             "radar_data": synthesis_8_factors,
             "news": news,
             "technicals": {
@@ -1097,11 +1114,23 @@ def get_gold_price():
                 "ema200": round(ema_200, 2),
                 "bias": tech_bias
             }
-        })
+        }
+
+        # Cache valid payload in server memory
+        app.last_known_gold_payload = payload
+
+        return jsonify(payload), 200
 
     except Exception as e:
         print(f"Error in /api/gold: {e}")
-        return jsonify({"error": f"Internal engine calculation error: {e}", "bid": 0.00}), 500
+        
+        if hasattr(app, 'last_known_gold_payload'):
+            return jsonify(app.last_known_gold_payload), 200
+            
+        return jsonify({
+            "error": f"Internal engine calculation error: {e}", 
+            "bid": getattr(app, 'last_known_gold_price', 0.00)
+        }), 500
 
 
 if __name__ == '__main__':
@@ -1109,5 +1138,4 @@ if __name__ == '__main__':
     print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL if 'ADMIN_EMAIL' in locals() else 'bakarekehinde383@gmail.com'}")
     app.run(host='0.0.0.0', port=10000)
 
-
-                            
+                                            
