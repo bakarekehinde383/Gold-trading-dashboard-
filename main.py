@@ -764,22 +764,36 @@ import requests
 import pandas as pd
 
 from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime, timezone
+import requests
+import pandas as pd
 
-# Global memory store for instant delivery
+# Global memory stores for instant delivery and smart fetching
 GLOBAL_GOLD_CACHE = None
+LAST_H1_CACHE = pd.DataFrame()
+LAST_D1_CACHE = pd.DataFrame()
+LAST_HOUR_FETCHED = None
 
 # =========================================================
-# BACKGROUND WORKER (Runs every 60 seconds)
+# BACKGROUND WORKER (ACTIVE HOURS STRATEGY)
+# Runs every 60s: Fast updates during London/NY. Sleeps during Asia.
 # =========================================================
 def update_gold_cache():
-    global GLOBAL_GOLD_CACHE
-    print("🔄 Running Background Gold Data Fetch (Every 60s)...")
+    global GLOBAL_GOLD_CACHE, LAST_H1_CACHE, LAST_D1_CACHE, LAST_HOUR_FETCHED
+    
+    current_utc = datetime.now(timezone.utc)
+    
+    # 1. Active Hours Check (Runs 07:00 UTC to 19:00 UTC)
+    if current_utc.weekday() >= 5 or not (7 <= current_utc.hour < 19):
+        print("😴 Asian Session or Weekend - Background Worker Sleeping...")
+        return
+        
+    print("🔄 Running Active Hours Live Fetch (Every 60s)...")
     
     symbol = "XAUUSD"
     TWELVE_DATA_API_KEY = "b48758c67cbf475eb87bbc197505060a"
     
     try:
-        # Fetch Macro & News
         macro = get_macro_data()
         news = get_news_data()
         session_data = get_killzone()
@@ -789,7 +803,7 @@ def update_gold_cache():
             try:
                 response = requests.get(url, timeout=10).json()
                 if 'values' not in response:
-                    print(f"Twelve Data Limit Hit or Error: {response}")
+                    print(f"⚠️ Twelve Data Limit/Error on {interval}: {response}")
                     return pd.DataFrame()
                 
                 df = pd.DataFrame(response['values'])
@@ -802,16 +816,25 @@ def update_gold_cache():
                 print(f"Twelve Data Fetch Error: {e}")
                 return pd.DataFrame()
 
-        rates_d1 = fetch_twelve_data(interval="1day", outputsize=30)
-        rates_h1 = fetch_twelve_data(interval="1h", outputsize=250)
+        # 2. SMART FETCH: Fetch 1H & Daily only once per hour to save API credits!
+        if LAST_HOUR_FETCHED != current_utc.hour or LAST_H1_CACHE.empty or LAST_D1_CACHE.empty:
+            print("⏳ Fetching 1H and Daily Data (Costs 2 Credits)...")
+            LAST_D1_CACHE = fetch_twelve_data(interval="1day", outputsize=30)
+            LAST_H1_CACHE = fetch_twelve_data(interval="1h", outputsize=250)
+            LAST_HOUR_FETCHED = current_utc.hour
+            
+        rates_d1 = LAST_D1_CACHE
+        rates_h1 = LAST_H1_CACHE
+        
+        # 3. LIVE FETCH: Always fetch 15M every 60 seconds (Costs 1 Credit)
         rates_m15 = fetch_twelve_data(interval="15min", outputsize=200)
 
         # Failsafe if API fails
-        if rates_h1.empty or rates_d1.empty:
+        if rates_h1.empty or rates_d1.empty or rates_m15.empty:
             print("⚠️ Twelve Data unavailable. Retaining last valid cache.")
             return
 
-        current_price = float(rates_h1['Close'].iloc[-1])
+        current_price = float(rates_m15['Close'].iloc[-1])
         today_d1 = rates_d1.iloc[-1]
 
         d1_range = float(today_d1['High'] - today_d1['Low'])
@@ -932,7 +955,7 @@ def update_gold_cache():
                 "bias": tech_bias
             }
         }
-        print("✅ Background Gold Data Cache Successfully Updated!")
+        print("✅ Live Gold Cache Successfully Updated!")
 
     except Exception as e:
         print(f"❌ Background worker error: {e}")
@@ -965,10 +988,11 @@ def get_gold_price():
 
     now_utc = datetime.now(timezone.utc)
     current_day = now_utc.weekday()
-    macro = get_macro_data()
-    news = get_news_data()
-
+    
+    # 1. Weekly Market Close Rules
     if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
+        macro = get_macro_data()
+        news = get_news_data()
         return jsonify({
             "bid": "CLOSED",
             "dxy": macro.get('dxy', 0.0),
@@ -985,13 +1009,22 @@ def get_gold_price():
             "radar_data": [50.0]*8, "news": news,
             "technicals": {"rsi": "-", "ema50": "-", "ema200": "-", "bias": "CLOSED"}
         })
+        
+    # 2. Asian Session Sleep Mode Message
+    if GLOBAL_GOLD_CACHE and not (7 <= now_utc.hour < 19):
+        asian_cache = GLOBAL_GOLD_CACHE.copy()
+        asian_cache['posture']['narrative'] = "ASIAN SESSION SLEEP MODE: Radar is static until London open to conserve live API limits."
+        return jsonify(asian_cache), 200
 
-    # Serve instant global cache
+    # 3. Normal Active Hours Response
     if GLOBAL_GOLD_CACHE:
         return jsonify(GLOBAL_GOLD_CACHE), 200
 
+    # 4. Bootup Fallback
+    macro = get_macro_data()
+    news = get_news_data()
     return jsonify({
-        "symbol": "XAUUSD", "bid": 2650.00, "dxy": 100.0, "tnx": 4.0,
+        "symbol": "XAUUSD", "bid": 2650.00, "dxy": macro.get('dxy', 0.0), "tnx": macro.get('us10y', 0.0),
         "bull_flow": 50.0, "bear_flow": 50.0,
         "posture": {"score": 50, "bias": "INITIALIZING", "action": "FETCHING FRESH SNAPSHOT", "narrative": "Engine warming up.", "ladder_state": "OBSERVE", "color": "text-amber-500"},
         "macro": macro, "session": get_killzone(), "radar_data": [50.0]*8, "news": news,
@@ -1003,5 +1036,4 @@ if __name__ == '__main__':
     print("🚀 KFX Gold Intelligence Backend Online!")
     print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL if 'ADMIN_EMAIL' in locals() else 'bakarekehinde383@gmail.com'}")
     app.run(host='0.0.0.0', port=10000)
-
-                                            
+                                              
