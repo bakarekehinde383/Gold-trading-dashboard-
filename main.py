@@ -763,6 +763,7 @@ from datetime import datetime, timezone
 import requests
 import pandas as pd
 
+ 
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timezone
 import requests
@@ -968,7 +969,6 @@ scheduler.start()
 # Initial fetch on startup
 update_gold_cache()
 
-
 # ---------------------------------------------------------
 # ROUTE 4: GATED API ENDPOINT (GOLD DATA)
 # ---------------------------------------------------------
@@ -989,7 +989,7 @@ def get_gold_price():
     now_utc = datetime.now(timezone.utc)
     current_day = now_utc.weekday()
     
-    # 1. Weekly Market Close Rules
+    # 1. Weekly Market Close Rules (Saturday or Sunday before 21:00 UTC)
     if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
         macro = get_macro_data()
         news = get_news_data()
@@ -1010,27 +1010,56 @@ def get_gold_price():
             "technicals": {"rsi": "-", "ema50": "-", "ema200": "-", "bias": "CLOSED"}
         })
         
-    # 2. Asian Session Sleep Mode Message
+    # 2. Asian / Dead Zone Sleep Mode Message (If Cache Exists)
     if GLOBAL_GOLD_CACHE and not (7 <= now_utc.hour < 19):
         asian_cache = GLOBAL_GOLD_CACHE.copy()
-        asian_cache['posture']['narrative'] = "ASIAN SESSION SLEEP MODE: Radar is static until London open to conserve live API limits."
+        asian_cache['posture']['narrative'] = "ASIAN / DEAD ZONE SLEEP MODE: Radar is static until London open to conserve live API limits."
         return jsonify(asian_cache), 200
 
     # 3. Normal Active Hours Response
     if GLOBAL_GOLD_CACHE:
         return jsonify(GLOBAL_GOLD_CACHE), 200
 
-    # 4. Bootup Fallback
+    # 4. SMART DYNAMIC FALLBACK (If Cold Boot Happens During Off-Hours)
     macro = get_macro_data()
     news = get_news_data()
+    killzone = get_killzone()
+
+    # Determine dynamic posture based on current killzone phase
+    if not (7 <= now_utc.hour < 19):
+        fallback_bias = killzone["name"]
+        fallback_action = "STAND ASIDE: " + killzone["phase"]
+        fallback_narrative = f"{killzone['desc']}. Live engine worker will resume at London Open (07:00 UTC)."
+        fallback_color = killzone["color"]
+    else:
+        fallback_bias = "INITIALIZING"
+        fallback_action = "FETCHING FRESH SNAPSHOT"
+        fallback_narrative = "Engine warming up. Fetching active market data..."
+        fallback_color = "text-amber-500"
+
     return jsonify({
-        "symbol": "XAUUSD", "bid": 2650.00, "dxy": macro.get('dxy', 0.0), "tnx": macro.get('us10y', 0.0),
-        "bull_flow": 50.0, "bear_flow": 50.0,
-        "posture": {"score": 50, "bias": "INITIALIZING", "action": "FETCHING FRESH SNAPSHOT", "narrative": "Engine warming up.", "ladder_state": "OBSERVE", "color": "text-amber-500"},
-        "macro": macro, "session": get_killzone(), "radar_data": [50.0]*8, "news": news,
+        "symbol": "XAUUSD", 
+        "bid": 2650.00, 
+        "dxy": macro.get('dxy', 0.0), 
+        "tnx": macro.get('us10y', 0.0),
+        "bull_flow": 50.0, 
+        "bear_flow": 50.0,
+        "posture": {
+            "score": 50, 
+            "bias": fallback_bias, 
+            "action": fallback_action, 
+            "narrative": fallback_narrative, 
+            "ladder_state": "OBSERVE", 
+            "color": fallback_color
+        },
+        "macro": macro, 
+        "session": killzone, 
+        "radar_data": [50.0]*8, 
+        "news": news,
         "technicals": {"rsi": 50.0, "ema50": 2650.0, "ema200": 2650.0, "bias": "NEUTRAL"}
     }), 200
 
+                       
 
 if __name__ == '__main__':
     print("🚀 KFX Gold Intelligence Backend Online!")
