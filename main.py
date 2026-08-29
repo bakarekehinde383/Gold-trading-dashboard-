@@ -763,7 +763,7 @@ from datetime import datetime, timezone
 import requests
 import pandas as pd
 
- 
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, timezone
 import requests
@@ -777,14 +777,14 @@ LAST_HOUR_FETCHED = None
 
 # =========================================================
 # BACKGROUND WORKER (ACTIVE HOURS STRATEGY)
-# Runs every 60s: Fast updates during London/NY. Sleeps during Asia.
+# Runs every 60s: Fast updates during London/NY. Sleeps during Asia/Weekend.
 # =========================================================
 def update_gold_cache():
     global GLOBAL_GOLD_CACHE, LAST_H1_CACHE, LAST_D1_CACHE, LAST_HOUR_FETCHED
     
     current_utc = datetime.now(timezone.utc)
     
-    # 1. Active Hours Check (Runs 07:00 UTC to 19:00 UTC)
+    # 1. Active Hours Check (Runs Monday-Friday, 07:00 UTC to 19:00 UTC)
     if current_utc.weekday() >= 5 or not (7 <= current_utc.hour < 19):
         print("😴 Asian Session or Weekend - Background Worker Sleeping...")
         return
@@ -969,6 +969,7 @@ scheduler.start()
 # Initial fetch on startup
 update_gold_cache()
 
+
 # ---------------------------------------------------------
 # ROUTE 4: GATED API ENDPOINT (GOLD DATA)
 # ---------------------------------------------------------
@@ -987,10 +988,16 @@ def get_gold_price():
             return jsonify({"error": "Subscription expired or inactive.", "status": "PAYMENT_REQUIRED"}), 403
 
     now_utc = datetime.now(timezone.utc)
-    current_day = now_utc.weekday()
+    current_day = now_utc.weekday() # 0 = Mon ... 4 = Fri, 5 = Sat, 6 = Sun
     
-    # 1. Weekly Market Close Rules (Saturday or Sunday before 21:00 UTC)
-    if current_day == 5 or (current_day == 6 and now_utc.hour < 21):
+    # 1. Weekly Market Close Rules (Friday >= 21:00 UTC, All Saturday, Sunday < 21:00 UTC)
+    is_weekend = (
+        (current_day == 4 and now_utc.hour >= 21) or 
+        (current_day == 5) or 
+        (current_day == 6 and now_utc.hour < 21)
+    )
+
+    if is_weekend:
         macro = get_macro_data()
         news = get_news_data()
         return jsonify({
@@ -1001,12 +1008,17 @@ def get_gold_price():
             "bear_flow": 50.0,
             "multi_flow": {"h4": {"bull": 50.0, "bear": 50.0}, "fast": {"bull": 50.0, "bear": 50.0}},
             "posture": {
-                "score": 0, "bias": "MARKET CLOSED", "action": "SYSTEM LOCKDOWN: WEEKEND",
-                "narrative": "Global markets are currently closed. The KFX Engine will resume at Sunday open.",
-                "ladder_state": "OBSERVE", "color": "text-slate-500"
+                "score": 0, 
+                "bias": "MARKET CLOSED", 
+                "action": "SYSTEM LOCKDOWN: WEEKEND",
+                "narrative": "Global markets are currently closed. The KFX Engine will resume at Sunday open (21:00 UTC).",
+                "ladder_state": "OBSERVE", 
+                "color": "text-slate-500"
             },
-            "macro": macro, "session": {"name": "WEEKEND CLOSE", "active": False},
-            "radar_data": [50.0]*8, "news": news,
+            "macro": macro, 
+            "session": {"name": "WEEKEND CLOSE", "active": False},
+            "radar_data": [50.0]*8, 
+            "news": news,
             "technicals": {"rsi": "-", "ema50": "-", "ema200": "-", "bias": "CLOSED"}
         })
         
@@ -1025,7 +1037,6 @@ def get_gold_price():
     news = get_news_data()
     killzone = get_killzone()
 
-    # Determine dynamic posture based on current killzone phase
     if not (7 <= now_utc.hour < 19):
         fallback_bias = killzone["name"]
         fallback_action = "STAND ASIDE: " + killzone["phase"]
@@ -1059,8 +1070,7 @@ def get_gold_price():
         "technicals": {"rsi": 50.0, "ema50": 2650.0, "ema200": 2650.0, "bias": "NEUTRAL"}
     }), 200
 
-                       
-
+ 
 if __name__ == '__main__':
     print("🚀 KFX Gold Intelligence Backend Online!")
     print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL if 'ADMIN_EMAIL' in locals() else 'bakarekehinde383@gmail.com'}")
