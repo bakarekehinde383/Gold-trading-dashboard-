@@ -775,6 +775,8 @@ LAST_H1_CACHE = pd.DataFrame()
 LAST_D1_CACHE = pd.DataFrame()
 LAST_HOUR_FETCHED = None
 
+        
+
 # =========================================================
 # BACKGROUND WORKER (ACTIVE HOURS STRATEGY)
 # Runs every 60s: Fast updates during London/NY. Sleeps during Asia/Weekend.
@@ -932,7 +934,7 @@ def update_gold_cache():
             round(score_4h, 1), round(score_fast, 1), round(score_range, 1), round(score_macro_edge, 1)
         ]
 
-       GLOBAL_GOLD_CACHE = {
+        GLOBAL_GOLD_CACHE = {
             "symbol": symbol,
             "bid": round(current_price, 2),
             "dxy": round(float(dxy_val), 2),
@@ -1139,4 +1141,5 @@ if __name__ == '__main__':
     print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL if 'ADMIN_EMAIL' in locals() else 'bakarekehinde383@gmail.com'}")
     app.run(host='0.0.0.0', port=10000)
 
-         
+                                        
+
