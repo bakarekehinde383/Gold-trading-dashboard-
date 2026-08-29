@@ -932,7 +932,7 @@ def update_gold_cache():
             round(score_4h, 1), round(score_fast, 1), round(score_range, 1), round(score_macro_edge, 1)
         ]
 
-        GLOBAL_GOLD_CACHE = {
+       GLOBAL_GOLD_CACHE = {
             "symbol": symbol,
             "bid": round(current_price, 2),
             "dxy": round(float(dxy_val), 2),
@@ -980,7 +980,7 @@ def get_gold_price():
         return jsonify({"error": "Unauthorized. Please enter your email."}), 401
  
     clean_email = user_email.strip().lower()
-    if clean_email == "bakarekehinde383@gmail.com" or (ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower()):
+    if clean_email == "bakarekehinde383@gmail.com" or ('ADMIN_EMAIL' in globals() and ADMIN_EMAIL and clean_email == str(ADMIN_EMAIL).strip().lower()):
         pass
     else:
         student = Student.query.filter_by(email=clean_email).first()
@@ -990,7 +990,8 @@ def get_gold_price():
     now_utc = datetime.now(timezone.utc)
     current_day = now_utc.weekday() # 0 = Mon ... 4 = Fri, 5 = Sat, 6 = Sun
     
-    # 1. Weekly Market Close Rules (Friday >= 21:00 UTC, All Saturday, Sunday < 21:00 UTC)
+    # 1. WEEKEND LOCKDOWN RULE:
+    # Friday >= 21:00 UTC, All Saturday (5), or Sunday (6) < 21:00 UTC
     is_weekend = (
         (current_day == 4 and now_utc.hour >= 21) or 
         (current_day == 5) or 
@@ -998,33 +999,66 @@ def get_gold_price():
     )
 
     if is_weekend:
-        macro = get_macro_data()
-        news = get_news_data()
+        try:
+            macro = get_macro_data() or {}
+        except Exception:
+            macro = {}
+            
+        try:
+            news = get_news_data() or []
+        except Exception:
+            news = []
+
+        dxy_val = float(macro.get('dxy', 104.0) or 104.0)
+        tnx_val = float(macro.get('us10y', 4.20) or 4.20)
+
         return jsonify({
-            "bid": "CLOSED",
-            "dxy": macro.get('dxy', 0.0),
-            "tnx": macro.get('us10y', 0.0),
+            "symbol": "XAUUSD",
+            "bid": 2650.00,  # Float prevents frontend JS crash
+            "dxy": dxy_val,
+            "tnx": tnx_val,
             "bull_flow": 50.0,
             "bear_flow": 50.0,
-            "multi_flow": {"h4": {"bull": 50.0, "bear": 50.0}, "fast": {"bull": 50.0, "bear": 50.0}},
+            "multi_flow": {
+                "h4": {"bull": 50.0, "bear": 50.0},
+                "h2": {"bull": 50.0, "bear": 50.0},
+                "fast": {"bull": 50.0, "bear": 50.0}
+            },
             "posture": {
-                "score": 0, 
+                "score": 50, 
                 "bias": "MARKET CLOSED", 
                 "action": "SYSTEM LOCKDOWN: WEEKEND",
                 "narrative": "Global markets are currently closed. The KFX Engine will resume at Sunday open (21:00 UTC).",
                 "ladder_state": "OBSERVE", 
                 "color": "text-slate-500"
             },
-            "macro": macro, 
-            "session": {"name": "WEEKEND CLOSE", "active": False},
-            "radar_data": [50.0]*8, 
-            "news": news,
-            "technicals": {"rsi": "-", "ema50": "-", "ema200": "-", "bias": "CLOSED"}
-        })
+            "macro": {
+                "dxy": dxy_val,
+                "us10y": tnx_val,
+                "yield_curve": float(macro.get('yield_curve', 0.0) or 0.0),
+                "vix": float(macro.get('vix', 15.0) or 15.0)
+            }, 
+            "session": {
+                "name": "WEEKEND CLOSE", 
+                "phase": "CLOSED", 
+                "desc": "Weekend System Standby", 
+                "active": False, 
+                "color": "text-slate-500"
+            },
+            "radar_data": [50.0] * 8, 
+            "news": news if isinstance(news, list) else [],
+            "technicals": {
+                "rsi": 50.0, 
+                "ema50": 2650.0, 
+                "ema200": 2650.0, 
+                "bias": "CLOSED"
+            }
+        }), 200
         
     # 2. Asian / Dead Zone Sleep Mode Message (If Cache Exists)
     if GLOBAL_GOLD_CACHE and not (7 <= now_utc.hour < 19):
         asian_cache = GLOBAL_GOLD_CACHE.copy()
+        asian_cache['posture'] = dict(asian_cache.get('posture', {}))
         asian_cache['posture']['narrative'] = "ASIAN / DEAD ZONE SLEEP MODE: Radar is static until London open to conserve live API limits."
         return jsonify(asian_cache), 200
 
@@ -1033,15 +1067,29 @@ def get_gold_price():
         return jsonify(GLOBAL_GOLD_CACHE), 200
 
     # 4. SMART DYNAMIC FALLBACK (If Cold Boot Happens During Off-Hours)
-    macro = get_macro_data()
-    news = get_news_data()
-    killzone = get_killzone()
+    try:
+        macro = get_macro_data() or {}
+    except Exception:
+        macro = {}
+
+    try:
+        news = get_news_data() or []
+    except Exception:
+        news = []
+
+    try:
+        killzone = get_killzone() or {}
+    except Exception:
+        killzone = {"name": "DEAD ZONE", "phase": "OFF-HOURS", "desc": "Market low liquidity window", "active": False, "color": "text-slate-500"}
+
+    dxy_val = float(macro.get('dxy', 104.0) or 104.0)
+    tnx_val = float(macro.get('us10y', 4.20) or 4.20)
 
     if not (7 <= now_utc.hour < 19):
-        fallback_bias = killzone["name"]
-        fallback_action = "STAND ASIDE: " + killzone["phase"]
-        fallback_narrative = f"{killzone['desc']}. Live engine worker will resume at London Open (07:00 UTC)."
-        fallback_color = killzone["color"]
+        fallback_bias = killzone.get("name", "DEAD ZONE")
+        fallback_action = "STAND ASIDE: " + killzone.get("phase", "OFF-HOURS")
+        fallback_narrative = f"{killzone.get('desc', 'Low liquidity period')}. Live engine worker will resume at London Open (07:00 UTC)."
+        fallback_color = killzone.get("color", "text-slate-500")
     else:
         fallback_bias = "INITIALIZING"
         fallback_action = "FETCHING FRESH SNAPSHOT"
@@ -1051,10 +1099,15 @@ def get_gold_price():
     return jsonify({
         "symbol": "XAUUSD", 
         "bid": 2650.00, 
-        "dxy": macro.get('dxy', 0.0), 
-        "tnx": macro.get('us10y', 0.0),
+        "dxy": dxy_val, 
+        "tnx": tnx_val,
         "bull_flow": 50.0, 
         "bear_flow": 50.0,
+        "multi_flow": {
+            "h4": {"bull": 50.0, "bear": 50.0},
+            "h2": {"bull": 50.0, "bear": 50.0},
+            "fast": {"bull": 50.0, "bear": 50.0}
+        },
         "posture": {
             "score": 50, 
             "bias": fallback_bias, 
@@ -1063,16 +1116,27 @@ def get_gold_price():
             "ladder_state": "OBSERVE", 
             "color": fallback_color
         },
-        "macro": macro, 
+        "macro": {
+            "dxy": dxy_val,
+            "us10y": tnx_val,
+            "yield_curve": float(macro.get('yield_curve', 0.0) or 0.0),
+            "vix": float(macro.get('vix', 15.0) or 15.0)
+        }, 
         "session": killzone, 
-        "radar_data": [50.0]*8, 
-        "news": news,
-        "technicals": {"rsi": 50.0, "ema50": 2650.0, "ema200": 2650.0, "bias": "NEUTRAL"}
+        "radar_data": [50.0] * 8, 
+        "news": news if isinstance(news, list) else [],
+        "technicals": {
+            "rsi": 50.0, 
+            "ema50": 2650.0, 
+            "ema200": 2650.0, 
+            "bias": "NEUTRAL"
+        }
     }), 200
 
- 
+
 if __name__ == '__main__':
     print("🚀 KFX Gold Intelligence Backend Online!")
     print(f"👑 Admin Bypass Active for: {ADMIN_EMAIL if 'ADMIN_EMAIL' in locals() else 'bakarekehinde383@gmail.com'}")
     app.run(host='0.0.0.0', port=10000)
-                                              
+
+         
